@@ -39,10 +39,27 @@ bot.on('message', async (msg) => {
         return;
     }
 
+    // --- HELPER: Progress Simulation ---
+    const simulateLoading = (chatId, messageId, baseText) => {
+        let dots = 0;
+        return setInterval(() => {
+            dots = (dots + 1) % 4;
+            const text = `${baseText} ${'.'.repeat(dots)}`;
+            bot.editMessageText(text, { chat_id: chatId, message_id: messageId }).catch(() => { });
+        }, 3000); // Update every 3 seconds to avoid rate limits
+    };
+
     // --- HANDLE URL (Google Drive or Direct Link) ---
     if (msg.text && (msg.text.startsWith('http') || msg.text.includes('drive.google.com'))) {
         const url = msg.text.trim();
-        bot.sendMessage(chatId, '🔗 Havola qabul qilindi. Yuklashga harakat qilyapman... (1/3)');
+        const statusMsg = await bot.sendMessage(chatId, '⏳ Havola qabul qilindi. Jarayon boshlanmoqda...');
+        const statusMsgId = statusMsg.message_id;
+
+        // Start "uploading_video" status in header
+        bot.sendChatAction(chatId, 'upload_video');
+        const actionInterval = setInterval(() => bot.sendChatAction(chatId, 'upload_video'), 4000);
+
+        let loadingInterval = simulateLoading(chatId, statusMsgId, '⏬ Google Drive-dan yuklanmoqda');
 
         try {
             let downloadUrl = url;
@@ -61,14 +78,16 @@ bot.on('message', async (msg) => {
                 url: downloadUrl,
                 method: 'GET',
                 responseType: 'arraybuffer', // Buffer for upload
-                maxContentLength: 100 * 1024 * 1024, // Limit download to 100MB to save RAM/Time
-                timeout: 60000 // 60 sec timeout
+                maxContentLength: 100 * 1024 * 1024, // Limit download to 100MB
+                timeout: 120000 // 2 minutes timeout for big files
             });
 
-            const fileBuffer = Buffer.from(response.data);
-            const fileName = `url_${Date.now()}.mp4`; // Generic name, assuming MP4
+            clearInterval(loadingInterval);
+            await bot.editMessageText('☁️ Video yuklab olindi. Supabase-ga jo\'natilyapti...', { chat_id: chatId, message_id: statusMsgId });
+            loadingInterval = simulateLoading(chatId, statusMsgId, '☁️ Supabase-ga yuklanmoqda');
 
-            bot.sendMessage(chatId, '☁️ Video yuklab olindi. Supabase-ga o\'tkazyapman... (2/3)');
+            const fileBuffer = Buffer.from(response.data);
+            const fileName = `url_${Date.now()}.mp4`;
 
             // Upload using existing logic
             const { data: uploadData, error: uploadError } = await supabase
@@ -90,7 +109,9 @@ bot.on('message', async (msg) => {
             const publicUrl = publicUrlData.publicUrl;
 
             // Insert DB
-            bot.sendMessage(chatId, '💾 Bazaga yozilmoqda... (3/3)');
+            clearInterval(loadingInterval);
+            await bot.editMessageText('💾 Bazaga yozilmoqda...', { chat_id: chatId, message_id: statusMsgId });
+
             const { error: dbError } = await supabase.from('videos').insert([{
                 url: publicUrl,
                 active: true,
@@ -100,11 +121,15 @@ bot.on('message', async (msg) => {
 
             if (dbError) throw dbError;
 
-            bot.sendMessage(chatId, `✅ <b>Link orqali yuklandi!</b>\n\nVideo qo'shildi!`, { parse_mode: 'HTML' });
+            // Success
+            clearInterval(actionInterval);
+            await bot.editMessageText(`✅ <b>Muvaffaqiyatli!</b>\n\nVideo qo'shildi!`, { chat_id: chatId, message_id: statusMsgId, parse_mode: 'HTML' });
 
         } catch (error) {
             console.error('Link Error:', error);
-            bot.sendMessage(chatId, `❌ Xatolik: ${error.message}\n\n(Agar bu Google Drive bo'lsa, fayl "General Access: Anyone with the link" ekanligiga ishonch hosil qiling).`);
+            clearInterval(loadingInterval);
+            clearInterval(actionInterval);
+            bot.editMessageText(`❌ Xatolik: ${error.message}\n\n(Agar bu Google Drive bo'lsa, fayl "General Access: Anyone with the link" ekanligiga ishonch hosil qiling).`, { chat_id: chatId, message_id: statusMsgId });
         }
         return;
     }
