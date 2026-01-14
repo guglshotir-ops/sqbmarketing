@@ -43,9 +43,20 @@ const BirthdayDisplay = () => {
     return currentTime >= peakStart && currentTime <= peakEnd;
   };
 
+  // If no birthdays and has videos - show only videos
+  useEffect(() => {
+    if (isLoaded && safeData.length === 0 && safeVideos.length > 0 && displayMode === 'birthday') {
+      console.log('No birthdays today, switching to video-only mode');
+      setDisplayMode('video');
+    }
+  }, [isLoaded, safeData.length, safeVideos.length, displayMode]);
+
   // Mode and Rotation Strategy
   useEffect(() => {
     if (displayMode === 'birthday') {
+      // If no birthdays - don't run rotation
+      if (safeData.length === 0) return;
+      
       // Calculate dynamic timing based on number of people
       const secondsPerPerson = 3;
       const peopleCount = safeData.length || 1;
@@ -99,12 +110,26 @@ const BirthdayDisplay = () => {
   const handleVideoEnd = () => {
     setVideoLoadError(false);
     setVideoPlaying(false);
+    
+    // Move to next video
+    const nextVideoIndex = (currentVideoIndex + 1) % (safeVideos.length || 1);
+    setCurrentVideoIndex(nextVideoIndex);
+    
+    // If no birthdays - stay in video mode, just loop videos
+    if (safeData.length === 0) {
+      console.log('No birthdays, continuing with next video');
+      // Small delay before next video
+      setTimeout(() => {
+        setVideoPlaying(false);
+      }, 100);
+      return;
+    }
+    
+    // If has birthdays - return to birthday mode
     if (safeVideos.length > 0) {
-      // After video ends, return to birthdays and queue next video
       setBirthdayStartTime(Date.now());
       setDisplayMode('birthday');
       setCurrentIndex(0);
-      setCurrentVideoIndex((prev) => (prev + 1) % safeVideos.length);
     } else {
       setDisplayMode('birthday');
     }
@@ -238,7 +263,7 @@ const BirthdayDisplay = () => {
                 <p className="text-[48px] font-light tracking-[0.1em] text-[#004666]/60">
                   Samimiy tilaklar bilan <span className="text-[#004666] font-bold">SQB jamoasi</span>
                 </p>
-                <p className="text-[24px] text-[#004666]/30 mt-4">test ## v2.2</p>
+                <p className="text-[24px] text-[#004666]/30 mt-4">test ## v2.3</p>
               </div>
             </>
           ) : (

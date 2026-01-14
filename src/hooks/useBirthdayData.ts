@@ -15,20 +15,20 @@ const defaultData: BirthdayPerson[] = [
 ];
 
 const VALID_DEPARTMENTS = [
-  "Agrosanoat klasterini moliya-rishni muvofiqlashtirish d.",
+  "O'rta biznes markazi",
+  "Agrosanoat klasterini moliyalashtirishni muvofiqlashtirish xizmati",
   "Aktivlar va passivlar xizmati",
   "Aloqa markazi",
-  "Axborot texnologiyalari departamenti",
   "Axborotlarni muhofaza qilish markazi",
-  "Aholini moliyaviy qo‘llab-quvvatlash va tadbir-ka jalb qilish d.",
-  "Bank kartalari tizimlarini qo‘llab-quvvatlash dep-ti",
-  "Bank tarmoqlari faoliyatini muvofiqlashtirish d.",
+  "Aholini moliyaviy qo'llab-quvvatlash va tadbirlarga jalb qilish xizmati",
+  "Axborot texnologiyalari departamenti",
+  "Bank kartalari tizimlarini qo'llab-quvvatlash departamenti",
+  "Bank tarmoqlari faoliyatini muvofiqlashtirish departamenti",
   "Bankni strategik rivojlantirish departamenti",
-  "Birinchi bo‘lim",
-  "Buxgalteriya hisobi va hisoboti departamenti",
-  "G‘aznachilik departamenti",
-  "Ijroni boshqarish va rivoj-ni tahlil qilish dep",
-  "Investitsion banking departamenti",
+  "Birinchi bo'lim",
+  "Buxgalteriya hisobi va hisobot departamenti",
+  "Ijroni boshqarish va rivojlanishni tahlil qilish departamenti",
+  "Investitsion bank departamenti",
   "Ichki audit departamenti",
   "Ichki xavfsizlik departamenti",
   "Komplaens nazorat departamenti",
@@ -37,31 +37,31 @@ const VALID_DEPARTMENTS = [
   "Korporativ markaz",
   "Korrupsiyaga qarshi kurashish xizmati",
   "Kredit monitoringi va nazorati departamenti",
-  "Kreditlarni ma’qullash departamenti",
+  "Kreditlarni ma'qullash departamenti",
   "Kreditlash departamenti",
-  "Kredit qarzdorliklari bilan ishlash departamenti",
-  "Qurilish materiallari sanoatini rivojlantirish dep.",
   "Loyiha boshqaruvi ofisi",
   "Marketing departamenti",
-  "Ma’lumotlarni boshqarish markazi",
-  "Ma’muriy xo‘jalik departamenti",
+  "Ma'lumotlarni boshqarish markazi",
+  "Ma'muriy-xo'jalik departamenti",
   "Mikro va kichik biznes departamenti",
-  "Moliya institutlari va investorlar bilan ishlash dep.",
+  "Moliya institutlari va investorlar bilan ishlash departamenti",
   "Moliyaviy menejment xizmati",
   "Operatsion departament",
   "Raqamli biznes departamenti",
   "Rahbariyat",
   "Risk menejment departamenti",
-  "Sun’iy intellekt departamenti",
-  "Sustainable Finance departamenti",
-  "Tranzaksion banking departamenti",
-  "Xalqaro moliyaviy hisobotlar va konsalting",
+  "Sun'iy intellekt departamenti",
+  "Tranzaksion bank departamenti",
+  "Xalqaro moliyaviy hisobotlar va konsalting xizmati",
   "Xaridlarni tashkil etish xizmati",
   "Xodimlar va tashkiliy rivojlantirish departamenti",
   "Chakana biznes departamenti",
   "Yuridik departament",
   "Yakuniy nazorat xizmati",
-  "O‘rta biznes markazi"
+  "Kredit qarzdorliklari bilan ishlash departamenti",
+  "G'aznachilik departamenti",
+  "Qurilish materiallari sanoatini rivojlantirish departamenti",
+  "Sustainable Finance departamenti"
 ];
 
 export interface VideoItem {
@@ -80,19 +80,24 @@ export const useBirthdayData = () => {
       const today = new Date();
       const month = (today.getMonth() + 1).toString().padStart(2, '0');
       const day = today.getDate().toString().padStart(2, '0');
-      const queryDate = `2000-${month}-${day}`;
-      console.log('Query date:', queryDate);
+      const monthDay = `-${month}-${day}`;
+      console.log('Looking for birthdays ending with:', monthDay);
 
-      const { data: employees, error: empError } = await supabase
+      // Get all employees and filter by month-day (ignoring year)
+      const { data: allEmployees, error: empError } = await supabase
         .from('employees')
         .select('*')
-        .eq('birth_date', queryDate)
         .order('name', { ascending: true });
 
       if (empError) {
         console.error('Employees fetch error:', empError);
         throw empError;
       }
+
+      // Filter by month and day (birth_date format: YYYY-MM-DD)
+      const employees = allEmployees?.filter(e => 
+        e.birth_date && e.birth_date.endsWith(monthDay)
+      ) || [];
 
       console.log('Employees found:', employees?.length || 0);
 
@@ -105,12 +110,19 @@ export const useBirthdayData = () => {
 
         console.log('Filtered employees:', filtered.length);
 
-        setData(filtered.map(e => ({
-          id: e.id,
-          name: e.name || 'Noma\'lum',
-          department: e.department || '',
-          position: e.position || ''
-        })));
+        setData(filtered.map(e => {
+          // Remove otchestvo - keep only first 2 words (FAMILIYA ISMI)
+          const fullName = e.name || 'Noma\'lum';
+          const nameParts = fullName.trim().split(' ');
+          const shortName = nameParts.slice(0, 2).join(' ');
+          
+          return {
+            id: e.id,
+            name: shortName,
+            department: e.department || '',
+            position: e.position || ''
+          };
+        }));
       } else {
         setData([]);
       }
