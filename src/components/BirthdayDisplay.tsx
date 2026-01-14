@@ -8,11 +8,17 @@ const LED_WIDTH = 1536;
 const LED_HEIGHT = 3456;
 
 const BirthdayDisplay = () => {
-  const { data, isLoaded } = useBirthdayData();
+  const { data, activeVideos, isLoaded } = useBirthdayData();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [scale, setScale] = useState(1);
+  const [displayMode, setDisplayMode] = useState<'birthday' | 'video'>('birthday');
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+  const [birthdayStartTime, setBirthdayStartTime] = useState(Date.now());
+  const [videoLoadError, setVideoLoadError] = useState(false);
+  const [videoPlaying, setVideoPlaying] = useState(false);
 
   const safeData = Array.isArray(data) ? data : [];
+  const safeVideos = Array.isArray(activeVideos) ? activeVideos : [];
 
   // Robust Scaling Engine
   useEffect(() => {
@@ -26,17 +32,33 @@ const BirthdayDisplay = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Birthday Rotation Strategy
+  // Mode and Rotation Strategy
   useEffect(() => {
-    const birthdayRotation = setInterval(() => {
-      const totalGroups = Math.ceil(safeData.length / 6);
-      const nextIndex = currentIndex + 6;
-      // Regular rotation or loop back
-      setCurrentIndex(nextIndex >= (totalGroups * 6 || 1) ? 0 : nextIndex);
-    }, 15000);
+    if (displayMode === 'birthday') {
+      const birthdayRotation = setInterval(() => {
+        const totalGroups = Math.ceil(safeData.length / 6);
+        const nextIndex = currentIndex + 6;
 
-    return () => clearInterval(birthdayRotation);
-  }, [safeData.length, currentIndex]);
+        // If we have finished all names, and there are videos, switch to video
+        if (nextIndex >= safeData.length && safeVideos.length > 0) {
+          // Stay on birthdays at least 30 seconds
+          const elapsed = (Date.now() - birthdayStartTime) / 1000;
+          if (elapsed >= 30) {
+            console.log('Switching to video mode, videos available:', safeVideos.length);
+            setDisplayMode('video');
+            setCurrentIndex(0);
+            setVideoLoadError(false);
+            return;
+          }
+        }
+
+        // Regular rotation or loop back
+        setCurrentIndex(nextIndex >= (totalGroups * 6 || 1) ? 0 : nextIndex);
+      }, 15000);
+
+      return () => clearInterval(birthdayRotation);
+    }
+  }, [displayMode, safeData.length, safeVideos.length, currentIndex, birthdayStartTime]);
 
   // Spinetix Keep-Alive: Invisible micro-activity
   useEffect(() => {
@@ -51,6 +73,48 @@ const BirthdayDisplay = () => {
     }, 5000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleVideoEnd = () => {
+    setVideoLoadError(false);
+    setVideoPlaying(false);
+    if (safeVideos.length > 0) {
+      // After video ends, return to birthdays and queue next video
+      setBirthdayStartTime(Date.now());
+      setDisplayMode('birthday');
+      setCurrentIndex(0);
+      setCurrentVideoIndex((prev) => (prev + 1) % safeVideos.length);
+    } else {
+      setDisplayMode('birthday');
+    }
+  };
+
+  // Switch back to birthday if video fails or is empty
+  useEffect(() => {
+    if (displayMode === 'video' && safeVideos.length === 0) {
+      setDisplayMode('birthday');
+    }
+  }, [displayMode, safeVideos]);
+
+  // Video load timeout - if video doesn't START playing in 10 seconds, skip
+  useEffect(() => {
+    if (displayMode === 'video' && safeVideos.length > 0 && !videoPlaying) {
+      const timeout = setTimeout(() => {
+        if (!videoPlaying) {
+          console.log('Video load timeout - skipping video:', safeVideos[currentVideoIndex]?.url);
+          setVideoLoadError(true);
+          // Skip to next video or return to birthdays
+          if (safeVideos.length > 1) {
+            setCurrentVideoIndex((prev) => (prev + 1) % safeVideos.length);
+            setVideoLoadError(false);
+          } else {
+            handleVideoEnd();
+          }
+        }
+      }, 10000); // 10 seconds timeout for loading
+
+      return () => clearTimeout(timeout);
+    }
+  }, [displayMode, safeVideos.length, currentVideoIndex, videoPlaying]);
 
   const visibleData = safeData.slice(currentIndex, currentIndex + 6);
 
@@ -81,7 +145,7 @@ const BirthdayDisplay = () => {
             <div className="w-full h-full flex items-center justify-center">
               <img src={sqbLogo} alt="" className="h-32 opacity-20 grayscale" />
             </div>
-          ) : (
+          ) : displayMode === 'birthday' ? (
             <>
               <ConfettiEffect />
 
@@ -152,8 +216,133 @@ const BirthdayDisplay = () => {
                 <p className="text-[48px] font-light tracking-[0.1em] text-[#004666]/60">
                   Samimiy tilaklar bilan <span className="text-[#004666] font-bold">SQB jamoasi</span>
                 </p>
+                <p className="text-[24px] text-[#004666]/30 mt-4">test ## v2.1</p>
               </div>
             </>
+          ) : (
+            // Video Mode
+            <div className="absolute inset-0 z-50 bg-[#f4f7f9] flex items-center justify-center animate-fade-in">
+              {(() => {
+                const videoItem = safeVideos[currentVideoIndex];
+                const videoUrl = videoItem?.url;
+                
+                if (!videoUrl) {
+                  // No video available, return to birthday
+                  setTimeout(() => {
+                    setDisplayMode('birthday');
+                    setBirthdayStartTime(Date.now());
+                  }, 1000);
+                  return (
+                    <div className="text-center">
+                      <img src={sqbLogo} alt="" className="h-32 opacity-20 grayscale mx-auto mb-4" />
+                      <p className="text-[#004666]/40 text-2xl">Video topilmadi</p>
+                    </div>
+                  );
+                }
+
+                // Handle Google Drive URLs (both /d/ and /uc?export=download formats)
+                if (videoUrl.includes('drive.google.com')) {
+                  let fileId = null;
+                  
+                  // Try /d/ format first
+                  const dMatch = videoUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                  if (dMatch) {
+                    fileId = dMatch[1];
+                  } else {
+                    // Try /uc?export=download format
+                    const ucMatch = videoUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+                    if (ucMatch) {
+                      fileId = ucMatch[1];
+                    }
+                  }
+                  
+                  if (fileId) {
+                    return (
+                      <iframe
+                        src={`https://drive.google.com/file/d/${fileId}/preview`}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          width: '100%',
+                          height: '100%',
+                          border: 'none',
+                          backgroundColor: '#000'
+                        }}
+                        allow="autoplay; fullscreen"
+                        onLoad={() => {
+                          console.log('Google Drive iframe loaded');
+                          setVideoPlaying(true);
+                          // Auto-return after 30 seconds for Google Drive videos
+                          setTimeout(() => {
+                            handleVideoEnd();
+                          }, 30000);
+                        }}
+                        onError={() => {
+                          console.error('Google Drive iframe error');
+                          handleVideoEnd();
+                        }}
+                      />
+                    );
+                  } else {
+                    console.error('Could not extract Google Drive file ID from:', videoUrl);
+                    handleVideoEnd();
+                    return null;
+                  }
+                }
+                
+                // Regular video tag for direct URLs
+                return (
+                  <video
+                    key={videoUrl} // Force re-render on URL change
+                    src={videoUrl}
+                    autoPlay
+                    muted
+                    playsInline
+                    preload="auto"
+                    className="block"
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'fill',
+                      backgroundColor: '#000'
+                    }}
+                    onPlay={() => {
+                      console.log('Video started playing:', videoUrl);
+                      setVideoPlaying(true);
+                      setVideoLoadError(false);
+                    }}
+                    onLoadedData={() => {
+                      console.log('Video loaded successfully:', videoUrl);
+                      setVideoLoadError(false);
+                    }}
+                    onCanPlay={() => {
+                      console.log('Video can play:', videoUrl);
+                      setVideoLoadError(false);
+                    }}
+                    onLoadStart={() => {
+                      console.log('Video load started:', videoUrl);
+                      setVideoLoadError(false);
+                    }}
+                    onStalled={() => {
+                      console.warn('Video stalled:', videoUrl);
+                    }}
+                    onWaiting={() => {
+                      console.warn('Video waiting for data:', videoUrl);
+                    }}
+                    onEnded={handleVideoEnd}
+                    onError={(e) => {
+                      console.error('Video error:', videoUrl, e);
+                      setVideoLoadError(true);
+                      handleVideoEnd();
+                    }}
+                  />
+                );
+              })()}
+            </div>
           )}
         </div>
       </div>

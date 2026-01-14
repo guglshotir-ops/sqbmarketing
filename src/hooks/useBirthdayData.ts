@@ -64,9 +64,15 @@ const VALID_DEPARTMENTS = [
   "O‘rta biznes markazi"
 ];
 
+export interface VideoItem {
+  url: string;
+  priority: number;
+}
+
 export const useBirthdayData = () => {
   const [data, setData] = useState<BirthdayPerson[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [activeVideos, setActiveVideos] = useState<VideoItem[]>([]);
 
   const fetchData = async () => {
     console.log('Fetching birthdays...');
@@ -75,6 +81,7 @@ export const useBirthdayData = () => {
       const month = (today.getMonth() + 1).toString().padStart(2, '0');
       const day = today.getDate().toString().padStart(2, '0');
       const queryDate = `2000-${month}-${day}`;
+      console.log('Query date:', queryDate);
 
       const { data: employees, error: empError } = await supabase
         .from('employees')
@@ -82,7 +89,12 @@ export const useBirthdayData = () => {
         .eq('birth_date', queryDate)
         .order('name', { ascending: true });
 
-      if (empError) throw empError;
+      if (empError) {
+        console.error('Employees fetch error:', empError);
+        throw empError;
+      }
+
+      console.log('Employees found:', employees?.length || 0);
 
       if (employees && employees.length > 0) {
         // Robust filter: trim and case-insensitive check
@@ -90,6 +102,8 @@ export const useBirthdayData = () => {
           const dept = (e.department || "").trim();
           return VALID_DEPARTMENTS.some(vd => vd.toLowerCase() === dept.toLowerCase());
         });
+
+        console.log('Filtered employees:', filtered.length);
 
         setData(filtered.map(e => ({
           id: e.id,
@@ -105,8 +119,42 @@ export const useBirthdayData = () => {
       console.error('Data fetch error:', error);
       setData([]); // Don't show default data if DB is connected but empty
     } finally {
+      console.log('Setting isLoaded to true');
       setIsLoaded(true);
     }
+
+    // Fetch videos separately (non-blocking)
+    (async () => {
+      try {
+        const { data: videos, error: videoError } = await supabase
+          .from('videos')
+          .select('*')
+          .eq('active', true)
+          .order('priority', { ascending: false })
+          .order('created_at', { ascending: false });
+
+        if (videoError) {
+          console.error('Video fetch error:', videoError);
+          setActiveVideos([]);
+          return;
+        }
+
+        if (videos && videos.length > 0) {
+          const currentValidVideos = videos.filter(v => {
+            const hasStarted = !v.start_time || new Date(v.start_time) <= new Date();
+            const hasNotEnded = !v.end_time || new Date(v.end_time) >= new Date();
+            return hasStarted && hasNotEnded;
+          });
+
+          setActiveVideos(currentValidVideos.map(v => ({ url: v.url, priority: v.priority || 10 })));
+        } else {
+          setActiveVideos([]);
+        }
+      } catch (e) {
+        console.error('Video fetch error:', e);
+        setActiveVideos([]);
+      }
+    })();
   };
 
   useEffect(() => {
@@ -166,5 +214,115 @@ export const useBirthdayData = () => {
     }
   };
 
-  return { data, isLoaded, addPerson, removePerson, updatePerson };
+  const uploadVideo = async (file: File, priority: number = 10) => {
+    try {
+      const fileName = `admin_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '')}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicData } = supabase.storage
+        .from('videos')
+        .getPublicUrl(fileName);
+
+      const { error: dbError } = await supabase.from('videos').insert([{
+        url: publicData.publicUrl,
+        active: true,
+        priority: priority,
+        created_at: new Date().toISOString()
+      }]);
+
+      if (dbError) throw dbError;
+      return { success: true };
+    } catch (e) {
+      console.error(e);
+      return { success: false, error: e };
+    }
+  };
+
+  const addVideoByUrl = async (url: string, priority: number = 10) => {
+    try {
+      let finalUrl = url;
+      // Google Drive converter - handle both /d/ and /uc?export=download formats
+      if (url.includes('drive.google.com')) {
+        let fileId = null;
+        
+        // Try /d/ format first
+        const dMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (dMatch) {
+          fileId = dMatch[1];
+        } else {
+          // Try /uc?export=download format
+          const ucMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+          if (ucMatch) {
+            fileId = ucMatch[1];
+          }
+        }
+        
+        if (fileId) {
+          finalUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+        }
+      }
+
+      const { error: dbError } = await supabase.from('videos').insert([{
+        url: finalUrl,
+        active: true,
+        priority: priority,
+        created_at: new Date().toISOString()
+      }]);
+
+      if (dbError) throw dbError;
+      return { success: true };
+    } catch (e) {
+      console.error(e);
+      return { success: false, error: e };
+    }
+  };
+
+  const deleteVideo = async (videoUrl: string) => {
+    try {
+      const { error } = await supabase
+        .from('videos')
+        .delete()
+        .eq('url', videoUrl);
+
+      if (error) throw error;
+      return { success: true };
+    } catch (e) {
+      console.error(e);
+      return { success: false, error: e };
+    }
+  };
+
+  const deleteAllVideos = async () => {
+    try {
+      // First get all video IDs
+      const { data: videos, error: fetchError } = await supabase
+        .from('videos')
+        .select('id');
+
+      if (fetchError) throw fetchError;
+
+      if (!videos || videos.length === 0) {
+        return { success: true }; // Nothing to delete
+      }
+
+      // Delete all videos by IDs
+      const { error } = await supabase
+        .from('videos')
+        .delete()
+        .in('id', videos.map(v => v.id));
+
+      if (error) throw error;
+      return { success: true };
+    } catch (e) {
+      console.error(e);
+      return { success: false, error: e };
+    }
+  };
+
+  return { data, activeVideos, isLoaded, addPerson, removePerson, updatePerson, uploadVideo, addVideoByUrl, deleteVideo, deleteAllVideos };
 };

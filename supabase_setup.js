@@ -31,6 +31,9 @@ async function setup() {
           id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
           url TEXT NOT NULL,
           active BOOLEAN DEFAULT true,
+          priority INTEGER DEFAULT 10,
+          start_time TIMESTAMPTZ,
+          end_time TIMESTAMPTZ,
           created_at TIMESTAMPTZ DEFAULT now()
         );
 
