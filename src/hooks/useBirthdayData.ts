@@ -67,7 +67,6 @@ const VALID_DEPARTMENTS = [
 export const useBirthdayData = () => {
   const [data, setData] = useState<BirthdayPerson[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [activeVideos, setActiveVideos] = useState<string[]>(['/sqbmarketing/videos/fin_uzb.mp4']);
 
   const fetchData = async () => {
     console.log('Fetching birthdays...');
@@ -102,32 +101,6 @@ export const useBirthdayData = () => {
         setData([]);
       }
 
-      // Smart Video Fetching & Scheduling
-      try {
-        const now = new Date().toISOString();
-        const { data: videos } = await supabase
-          .from('videos')
-          .select('*')
-          .eq('active', true)
-          .order('priority', { ascending: false })
-          .order('created_at', { ascending: false });
-
-        if (videos && videos.length > 0) {
-          // Filter videos by schedule
-          const currentValidVideos = videos.filter(v => {
-            const hasStarted = !v.start_time || new Date(v.start_time) <= new Date();
-            const hasNotEnded = !v.end_time || new Date(v.end_time) >= new Date();
-            return hasStarted && hasNotEnded;
-          });
-
-          setActiveVideos(currentValidVideos.map(v => v.url));
-        } else {
-          setActiveVideos(['/sqbmarketing/videos/fin_uzb.mp4']); // Fallback
-        }
-      } catch (e) {
-        console.error('Video fetch error:', e);
-      }
-
     } catch (error) {
       console.error('Data fetch error:', error);
       setData([]); // Don't show default data if DB is connected but empty
@@ -156,5 +129,42 @@ export const useBirthdayData = () => {
     };
   }, []);
 
-  return { data, activeVideos, isLoaded };
+  const addPerson = async (name: string, position: string) => {
+    try {
+      const today = new Date();
+      const month = (today.getMonth() + 1).toString().padStart(2, '0');
+      const day = today.getDate().toString().padStart(2, '0');
+      const birthDate = `2000-${month}-${day}`; // Mock birthdate for today
+
+      const { error } = await supabase.from('employees').insert([{
+        name,
+        position,
+        department: 'Boshqaruv', // Default
+        birth_date: birthDate
+      }]);
+      if (error) throw error;
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const removePerson = async (id: string) => {
+    try {
+      const { error } = await supabase.from('employees').delete().eq('id', id);
+      if (error) throw error;
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const updatePerson = async (id: string, name: string, position: string) => {
+    try {
+      const { error } = await supabase.from('employees').update({ name, position }).eq('id', id);
+      if (error) throw error;
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  return { data, isLoaded, addPerson, removePerson, updatePerson };
 };

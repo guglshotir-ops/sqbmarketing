@@ -8,15 +8,11 @@ const LED_WIDTH = 1536;
 const LED_HEIGHT = 3456;
 
 const BirthdayDisplay = () => {
-  const { data, activeVideos, isLoaded } = useBirthdayData();
+  const { data, isLoaded } = useBirthdayData();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [scale, setScale] = useState(1);
-  const [displayMode, setDisplayMode] = useState<'birthday' | 'video'>('birthday');
-  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
-  const [birthdayStartTime, setBirthdayStartTime] = useState(Date.now());
 
   const safeData = Array.isArray(data) ? data : [];
-  const safeVideos = Array.isArray(activeVideos) ? activeVideos : [];
 
   // Robust Scaling Engine
   useEffect(() => {
@@ -30,31 +26,17 @@ const BirthdayDisplay = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Mode and Rotation Strategy
+  // Birthday Rotation Strategy
   useEffect(() => {
-    if (displayMode === 'birthday') {
-      const birthdayRotation = setInterval(() => {
-        const totalGroups = Math.ceil(safeData.length / 6);
-        const nextIndex = currentIndex + 6;
+    const birthdayRotation = setInterval(() => {
+      const totalGroups = Math.ceil(safeData.length / 6);
+      const nextIndex = currentIndex + 6;
+      // Regular rotation or loop back
+      setCurrentIndex(nextIndex >= (totalGroups * 6 || 1) ? 0 : nextIndex);
+    }, 15000);
 
-        // If we have finished all names, and there are videos, switch to video
-        if (nextIndex >= safeData.length && safeVideos.length > 0) {
-          // Stay on birthdays at least 30 seconds
-          const elapsed = (Date.now() - birthdayStartTime) / 1000;
-          if (elapsed >= 30) {
-            setDisplayMode('video');
-            setCurrentIndex(0);
-            return;
-          }
-        }
-
-        // Regular rotation or loop back
-        setCurrentIndex(nextIndex >= (totalGroups * 6 || 1) ? 0 : nextIndex);
-      }, 15000);
-
-      return () => clearInterval(birthdayRotation);
-    }
-  }, [displayMode, safeData.length, safeVideos.length, currentIndex, birthdayStartTime]);
+    return () => clearInterval(birthdayRotation);
+  }, [safeData.length, currentIndex]);
 
   // Spinetix Keep-Alive: Invisible micro-activity
   useEffect(() => {
@@ -69,22 +51,6 @@ const BirthdayDisplay = () => {
     }, 5000);
     return () => clearInterval(interval);
   }, []);
-
-  const handleVideoEnd = () => {
-    if (safeVideos.length > 1) {
-      setCurrentVideoIndex((prev) => (prev + 1) % safeVideos.length);
-    }
-    setBirthdayStartTime(Date.now());
-    setDisplayMode('birthday');
-    setCurrentIndex(0);
-  };
-
-  // Switch back to birthday if video fails or is empty
-  useEffect(() => {
-    if (displayMode === 'video' && safeVideos.length === 0) {
-      setDisplayMode('birthday');
-    }
-  }, [displayMode, safeVideos]);
 
   const visibleData = safeData.slice(currentIndex, currentIndex + 6);
 
@@ -115,7 +81,7 @@ const BirthdayDisplay = () => {
             <div className="w-full h-full flex items-center justify-center">
               <img src={sqbLogo} alt="" className="h-32 opacity-20 grayscale" />
             </div>
-          ) : displayMode === 'birthday' ? (
+          ) : (
             <>
               <ConfettiEffect />
 
@@ -188,18 +154,6 @@ const BirthdayDisplay = () => {
                 </p>
               </div>
             </>
-          ) : (
-            // Video Mode
-            <div className="absolute inset-0 z-50 bg-[#f4f7f9] flex items-center justify-center animate-fade-in">
-              <video
-                src={safeVideos[currentVideoIndex]}
-                autoPlay
-                className="w-full h-full object-cover"
-                onEnded={handleVideoEnd}
-                onError={handleVideoEnd}
-                style={{ backgroundColor: '#f4f7f9' }}
-              />
-            </div>
           )}
         </div>
       </div>
