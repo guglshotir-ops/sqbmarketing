@@ -23,15 +23,12 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://gatnhnezkxtionzcuork.s
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-console.log('🤖 SQB Display Bot ishga tushdi! (Bot Started)');
+console.log('SQB Display Bot ishga tushdi! (Bot Started)');
 console.log('Video yuborishni kutyapman...');
 
+// --- BOT LOGIC ---
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
-    const adminUsername = msg.chat.username;
-
-    // Optional: Log who is using the bot
-    console.log(`Message from ${adminUsername} (${chatId}): ${msg.text || '[Media]'}`);
 
     // Command: /start
     if (msg.text === '/start') {
@@ -59,7 +56,7 @@ bot.on('message', async (msg) => {
         bot.sendChatAction(chatId, 'upload_video');
         const actionInterval = setInterval(() => bot.sendChatAction(chatId, 'upload_video'), 4000);
 
-        let loadingInterval = simulateLoading(chatId, statusMsgId, '⏬ Google Drive-dan yuklanmoqda');
+        let loadingInterval = simulateLoading(chatId, statusMsgId, '⏬ Yuklanmoqda (Streaming Mode)');
 
         try {
             let downloadUrl = url;
@@ -73,29 +70,29 @@ bot.on('message', async (msg) => {
                 }
             }
 
-            // Download stream
+            // STREAM DOWNLOAD
+            // We do NOT download to RAM buffer. We pipe stream directly.
             const response = await axios({
                 url: downloadUrl,
                 method: 'GET',
-                responseType: 'arraybuffer', // Buffer for upload
-                maxContentLength: 100 * 1024 * 1024, // Limit download to 100MB
-                timeout: 120000 // 2 minutes timeout for big files
+                responseType: 'stream',
+                timeout: 600000 // 10 minutes timeout for HUGE files
             });
 
             clearInterval(loadingInterval);
-            await bot.editMessageText('☁️ Video yuklab olindi. Supabase-ga jo\'natilyapti...', { chat_id: chatId, message_id: statusMsgId });
-            loadingInterval = simulateLoading(chatId, statusMsgId, '☁️ Supabase-ga yuklanmoqda');
+            await bot.editMessageText('☁️ Oqim orqali Supabase-ga uzatilyapti (Stream Upload)...', { chat_id: chatId, message_id: statusMsgId });
+            loadingInterval = simulateLoading(chatId, statusMsgId, '☁️ Supabase-ga yozilmoqda');
 
-            const fileBuffer = Buffer.from(response.data);
             const fileName = `url_${Date.now()}.mp4`;
 
-            // Upload using existing logic
+            // Upload using STREAM
             const { data: uploadData, error: uploadError } = await supabase
                 .storage
                 .from('videos')
-                .upload(fileName, fileBuffer, {
+                .upload(fileName, response.data, {
                     contentType: 'video/mp4',
-                    upsert: false
+                    upsert: false,
+                    duplex: 'half' // Required for nodejs stream uploads
                 });
 
             if (uploadError) throw new Error(uploadError.message);
@@ -138,54 +135,51 @@ bot.on('message', async (msg) => {
     if (msg.video) {
         const video = msg.video;
         const fileId = video.file_id;
-        // Generate a clean filename
-        const timestamp = Date.now();
-        const originalName = video.file_name || 'video_upload';
-        // Sanitize filename to avoid path issues
-        const safeName = originalName.replace(/[^a-zA-Z0-9]/g, '_');
-        const fileName = `tg_${timestamp}_${safeName}.mp4`;
 
         bot.sendMessage(chatId, '⏳ Qabul qildim. Yuklab olinmoqda... (1/3)');
 
         try {
-            // 1. Get direct download link from Telegram
+            // Get file link
             const fileLink = await bot.getFileLink(fileId);
 
-            // 2. Download file as buffer
-            const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
+            // Download as Stream
+            const response = await axios({
+                url: fileLink,
+                method: 'GET',
+                responseType: 'arraybuffer' // Keep buffer for small files (<20MB)
+            });
+
             const fileBuffer = Buffer.from(response.data);
+            const fileName = `vid_${Date.now()}.mp4`;
 
             bot.sendMessage(chatId, '☁️ Supabase Storage-ga yuklanmoqda... (2/3)');
 
-            // 3. Upload to Supabase 'videos' bucket
-            // Ensure you have created a public bucket named 'videos' in Supabase Storage!
+            // Upload to Supabase
             const { data: uploadData, error: uploadError } = await supabase
                 .storage
                 .from('videos')
                 .upload(fileName, fileBuffer, {
-                    contentType: video.mime_type || 'video/mp4',
+                    contentType: 'video/mp4',
                     upsert: false
                 });
 
             if (uploadError) {
-                console.error('Storage Error:', uploadError);
-                if (uploadError.message.includes('not found') || uploadError.statusCode === '404') {
+                if (uploadError.message.includes('The resource was not found')) {
                     throw new Error('Supabase Storage-da "videos" nomli bucket topilmadi. Iltimos, Supabase panelida yarating va Public qiling.');
                 }
                 throw new Error(uploadError.message);
             }
 
-            // 4. Get Public URL
+            // Get Public URL
             const { data: publicUrlData } = supabase
                 .storage
                 .from('videos')
                 .getPublicUrl(fileName);
 
             const publicUrl = publicUrlData.publicUrl;
-            console.log('File uploaded:', publicUrl);
 
-            // 5. Insert record into Database 'videos' table
-            bot.sendMessage(chatId, '💾 Bazaga yozilmoqda... (3/3)');
+            // Save to DB
+            bot.sendMessage(chatId, '💾 Bazaga ma\'lumot yozilmoqda... (3/3)');
 
             const { error: dbError } = await supabase
                 .from('videos')
@@ -193,27 +187,18 @@ bot.on('message', async (msg) => {
                     {
                         url: publicUrl,
                         active: true,
-                        priority: 10,   // High priority for instant playback
-                        created_at: new Date().toISOString(),
-                        // start_time and end_time can be left null for immediate permanent playback
+                        priority: 10, // High priority
+                        created_at: new Date().toISOString()
                     }
                 ]);
 
-            if (dbError) {
-                console.error('Database Error:', dbError);
-                throw new Error('Bazaga yozishda xatolik: ' + dbError.message);
-            }
+            if (dbError) throw dbError;
 
-            bot.sendMessage(chatId, `✅ <b>Muvaffaqiyatli!</b>\n\nVideo yuklandi va bazaga qo'shildi.\nNavbatdagi siklda ekranda paydo bo'ladi!\n\n🔗 ${publicUrl}`, { parse_mode: 'HTML' });
+            bot.sendMessage(chatId, '✅ <b>Muvaffaqiyatli!</b>\n\nVideo qo\'shildi va navbatga qo\'yildi.', { parse_mode: 'HTML' });
 
         } catch (error) {
-            console.error('Bot Error:', error);
-            bot.sendMessage(chatId, `❌ <b>Xatolik yuz berdi:</b>\n${error.message}`, { parse_mode: 'HTML' });
+            console.error('Error:', error);
+            bot.sendMessage(chatId, `❌ Xatolik yuz berdi:\n${error.message}`);
         }
-    } else if (msg.document && msg.document.mime_type?.startsWith('video')) {
-        // Handle video sent as document
-        bot.sendMessage(chatId, '⚠️ Iltimos, videoni fayl sifatida emas, "Video" formatida yuboring (siqilgan holda), bu tezroq ishlaydi.');
-    } else if (!msg.text?.startsWith('/')) {
-        bot.sendMessage(chatId, '🎥 Iltimos, faqat video fayl yuboring.');
     }
 });
