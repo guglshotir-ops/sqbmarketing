@@ -32,19 +32,41 @@ const BirthdayDisplay = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Smart Timing: Check if current time is peak hours (8:30-9:30)
+  const isPeakHours = () => {
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    const currentTime = hours * 60 + minutes; // Convert to minutes
+    const peakStart = 8 * 60 + 30;  // 8:30
+    const peakEnd = 9 * 60 + 30;    // 9:30
+    return currentTime >= peakStart && currentTime <= peakEnd;
+  };
+
   // Mode and Rotation Strategy
   useEffect(() => {
     if (displayMode === 'birthday') {
+      // Calculate dynamic timing based on number of people
+      const secondsPerPerson = 3;
+      const peopleCount = safeData.length || 1;
+      const totalGroups = Math.ceil(peopleCount / 6) || 1;
+      
+      // Slide interval = total time / number of slides (minimum 5 sec)
+      const baseShowTime = peopleCount * secondsPerPerson;
+      const slideInterval = Math.max(5000, (baseShowTime / totalGroups) * 1000);
+
       const birthdayRotation = setInterval(() => {
-        const totalGroups = Math.ceil(safeData.length / 6);
         const nextIndex = currentIndex + 6;
 
         // If we have finished all names, and there are videos, switch to video
         if (nextIndex >= safeData.length && safeVideos.length > 0) {
-          // Stay on birthdays at least 30 seconds
+          // Smart timing: 3 sec per person, with peak multiplier
+          const repetitions = isPeakHours() ? 2 : 1; // 2x in peak hours
+          const minShowTime = baseShowTime * repetitions;
+          
           const elapsed = (Date.now() - birthdayStartTime) / 1000;
-          if (elapsed >= 30) {
-            console.log('Switching to video mode, videos available:', safeVideos.length);
+          if (elapsed >= minShowTime) {
+            console.log(`Switching to video (${peopleCount} people, elapsed: ${elapsed}s, min: ${minShowTime}s, peak: ${isPeakHours()})`);
             setDisplayMode('video');
             setCurrentIndex(0);
             setVideoLoadError(false);
@@ -53,8 +75,8 @@ const BirthdayDisplay = () => {
         }
 
         // Regular rotation or loop back
-        setCurrentIndex(nextIndex >= (totalGroups * 6 || 1) ? 0 : nextIndex);
-      }, 15000);
+        setCurrentIndex(nextIndex >= (totalGroups * 6) ? 0 : nextIndex);
+      }, slideInterval);
 
       return () => clearInterval(birthdayRotation);
     }
@@ -216,7 +238,7 @@ const BirthdayDisplay = () => {
                 <p className="text-[48px] font-light tracking-[0.1em] text-[#004666]/60">
                   Samimiy tilaklar bilan <span className="text-[#004666] font-bold">SQB jamoasi</span>
                 </p>
-                <p className="text-[24px] text-[#004666]/30 mt-4">test ## v2.1</p>
+                <p className="text-[24px] text-[#004666]/30 mt-4">test ## v2.2</p>
               </div>
             </>
           ) : (
