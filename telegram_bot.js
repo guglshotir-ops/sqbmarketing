@@ -35,11 +35,81 @@ bot.on('message', async (msg) => {
 
     // Command: /start
     if (msg.text === '/start') {
-        bot.sendMessage(chatId, '👋 Salom! Men SQB Display Botman.\n\n🎥 Menga video (.mp4) yuboring, men uni darhol LED ekranga chiqaraman.');
+        bot.sendMessage(chatId, '👋 Salom! Men SQB Display Botman.\n\n🎥 <b>VIDEO YUKLASH YO\'LLARI:</b>\n1. Kichik video (<20MB): Shunchaki Telegram orqali yuboring.\n2. Katta video (>20MB): Google Drive yoki to\'g\'ridan-to\'g\'ri havola (.mp4) yuboring.', { parse_mode: 'HTML' });
         return;
     }
 
-    // Handle Video
+    // --- HANDLE URL (Google Drive or Direct Link) ---
+    if (msg.text && (msg.text.startsWith('http') || msg.text.includes('drive.google.com'))) {
+        const url = msg.text.trim();
+        bot.sendMessage(chatId, '🔗 Havola qabul qilindi. Yuklashga harakat qilyapman... (1/3)');
+
+        try {
+            let downloadUrl = url;
+
+            // Google Drive converter (View -> Download)
+            if (url.includes('drive.google.com') && url.includes('/d/')) {
+                const fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                if (fileIdMatch && fileIdMatch[1]) {
+                    downloadUrl = `https://drive.google.com/uc?export=download&id=${fileIdMatch[1]}`;
+                    console.log('Converted Drive URL:', downloadUrl);
+                }
+            }
+
+            // Download stream
+            const response = await axios({
+                url: downloadUrl,
+                method: 'GET',
+                responseType: 'arraybuffer', // Buffer for upload
+                maxContentLength: 100 * 1024 * 1024, // Limit download to 100MB to save RAM/Time
+                timeout: 60000 // 60 sec timeout
+            });
+
+            const fileBuffer = Buffer.from(response.data);
+            const fileName = `url_${Date.now()}.mp4`; // Generic name, assuming MP4
+
+            bot.sendMessage(chatId, '☁️ Video yuklab olindi. Supabase-ga o\'tkazyapman... (2/3)');
+
+            // Upload using existing logic
+            const { data: uploadData, error: uploadError } = await supabase
+                .storage
+                .from('videos')
+                .upload(fileName, fileBuffer, {
+                    contentType: 'video/mp4',
+                    upsert: false
+                });
+
+            if (uploadError) throw new Error(uploadError.message);
+
+            // Get Public URL
+            const { data: publicUrlData } = supabase
+                .storage
+                .from('videos')
+                .getPublicUrl(fileName);
+
+            const publicUrl = publicUrlData.publicUrl;
+
+            // Insert DB
+            bot.sendMessage(chatId, '💾 Bazaga yozilmoqda... (3/3)');
+            const { error: dbError } = await supabase.from('videos').insert([{
+                url: publicUrl,
+                active: true,
+                priority: 10,
+                created_at: new Date().toISOString()
+            }]);
+
+            if (dbError) throw dbError;
+
+            bot.sendMessage(chatId, `✅ <b>Link orqali yuklandi!</b>\n\nVideo qo'shildi!`, { parse_mode: 'HTML' });
+
+        } catch (error) {
+            console.error('Link Error:', error);
+            bot.sendMessage(chatId, `❌ Xatolik: ${error.message}\n\n(Agar bu Google Drive bo'lsa, fayl "General Access: Anyone with the link" ekanligiga ishonch hosil qiling).`);
+        }
+        return;
+    }
+
+    // --- HANDLE DIRECT FILE UPLOAD (Existing Logic) ---
     if (msg.video) {
         const video = msg.video;
         const fileId = video.file_id;
