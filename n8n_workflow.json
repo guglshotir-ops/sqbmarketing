@@ -1,0 +1,170 @@
+{
+    "name": "SQB Birthday Video Uploader",
+    "nodes": [
+        {
+            "parameters": {
+                "updates": [
+                    "message"
+                ],
+                "additionalFields": {}
+            },
+            "name": "Telegram Trigger",
+            "type": "n8n-nodes-base.telegramTrigger",
+            "typeVersion": 1,
+            "position": [
+                460,
+                300
+            ],
+            "credentials": {
+                "telegramApi": {
+                    "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+                    "name": "SQB Bot"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "url": "={{$json.message.video.file_id}}",
+                "operation": "getFile",
+                "download": true
+            },
+            "name": "Download Video",
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                680,
+                300
+            ],
+            "credentials": {
+                "telegramApi": {
+                    "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+                    "name": "SQB Bot"
+                }
+            }
+        },
+        {
+            "parameters": {
+                "bucketName": "videos",
+                "fileName": "={{'tg_' + Date.now() + '.mp4'}}",
+                "binaryData": true
+            },
+            "name": "Upload to Supabase",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                900,
+                300
+            ],
+            "credentials": {
+                "supabaseApi": {
+                    "id": "YOUR_SUPABASE_CREDENTIAL_ID",
+                    "name": "SQB Supabase"
+                }
+            },
+            "operation": "upload"
+        },
+        {
+            "parameters": {
+                "tableId": "videos",
+                "fieldsUi": {
+                    "fieldValues": [
+                        {
+                            "fieldId": "url",
+                            "fieldValue": "={{$json.publicUrl}}"
+                        },
+                        {
+                            "fieldId": "active",
+                            "fieldValue": "true"
+                        },
+                        {
+                            "fieldId": "priority",
+                            "fieldValue": "10"
+                        }
+                    ]
+                }
+            },
+            "name": "Insert into DB",
+            "type": "n8n-nodes-base.supabase",
+            "typeVersion": 1,
+            "position": [
+                1120,
+                300
+            ],
+            "credentials": {
+                "supabaseApi": {
+                    "id": "YOUR_SUPABASE_CREDENTIAL_ID",
+                    "name": "SQB Supabase"
+                }
+            },
+            "operation": "create"
+        },
+        {
+            "parameters": {
+                "chatId": "={{$node[\"Telegram Trigger\"].json[\"message\"][\"chat\"][\"id\"]}}",
+                "text": "✅ Видео успешно загружено и добавлено в эфир!",
+                "additionalFields": {
+                    "parse_mode": "HTML"
+                }
+            },
+            "name": "Success Message",
+            "type": "n8n-nodes-base.telegram",
+            "typeVersion": 1,
+            "position": [
+                1340,
+                300
+            ],
+            "credentials": {
+                "telegramApi": {
+                    "id": "YOUR_TELEGRAM_CREDENTIAL_ID",
+                    "name": "SQB Bot"
+                }
+            }
+        }
+    ],
+    "connections": {
+        "Telegram Trigger": {
+            "main": [
+                [
+                    {
+                        "node": "Download Video",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Download Video": {
+            "main": [
+                [
+                    {
+                        "node": "Upload to Supabase",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Upload to Supabase": {
+            "main": [
+                [
+                    {
+                        "node": "Insert into DB",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        },
+        "Insert into DB": {
+            "main": [
+                [
+                    {
+                        "node": "Success Message",
+                        "type": "main",
+                        "index": 0
+                    }
+                ]
+            ]
+        }
+    }
+}

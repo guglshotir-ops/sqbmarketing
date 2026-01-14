@@ -47,7 +47,7 @@ const ConfettiEffect = () => {
 
     const initParticles = () => {
       particlesRef.current = [];
-      for (let i = 0; i < 200; i++) { // More particles for LED screen
+      for (let i = 0; i < 80; i++) { // Optimized particle count for large screen performance
         const particle = createParticle();
         particle.y = Math.random() * LED_HEIGHT;
         particlesRef.current.push(particle);
