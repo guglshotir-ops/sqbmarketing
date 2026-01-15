@@ -58,12 +58,13 @@ const BirthdayDisplay = () => {
       if (safeData.length === 0) return;
       
       // Calculate dynamic timing based on number of people
-      const secondsPerPerson = 3;
+      const secondsPerPerson = 2.5;
       const peopleCount = safeData.length || 1;
       const totalGroups = Math.ceil(peopleCount / 6) || 1;
       
       // Slide interval = total time / number of slides (minimum 5 sec)
-      const baseShowTime = peopleCount * secondsPerPerson;
+      // Minimum 10 seconds total show time even for 1 person
+      const baseShowTime = Math.max(10, peopleCount * secondsPerPerson);
       const slideInterval = Math.max(5000, (baseShowTime / totalGroups) * 1000);
 
       const birthdayRotation = setInterval(() => {
@@ -263,7 +264,7 @@ const BirthdayDisplay = () => {
                 <p className="text-[48px] font-light tracking-[0.1em] text-[#004666]/60">
                   Samimiy tilaklar bilan <span className="text-[#004666] font-bold">SQB jamoasi</span>
                 </p>
-                <p className="text-[24px] text-[#004666]/30 mt-4">test ## v2.3</p>
+                <p className="text-[24px] text-[#004666]/30 mt-4">test ## v2.4</p>
               </div>
             </>
           ) : (
