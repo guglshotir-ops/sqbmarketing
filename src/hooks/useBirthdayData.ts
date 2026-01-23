@@ -138,21 +138,19 @@ export const useBirthdayData = () => {
     }
 
     // Fetch videos
-    (async () => {
-      try {
-        const { data: videos } = await supabase
-          .from('videos')
-          .select('*')
-          .eq('active', true)
-          .order('priority', { ascending: false });
+    try {
+      const { data: videos } = await supabase
+        .from('videos')
+        .select('*')
+        .eq('active', true)
+        .order('priority', { ascending: false });
 
-        if (videos) {
-          setActiveVideos(videos.map(v => ({ url: v.url, priority: v.priority || 10 })));
-        }
-      } catch (e) {
-        console.error(e);
+      if (videos) {
+        setActiveVideos(videos.map(v => ({ url: v.url, priority: v.priority || 10 })));
       }
-    })();
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   useEffect(() => {
