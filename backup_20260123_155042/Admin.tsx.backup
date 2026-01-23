@@ -1,0 +1,522 @@
+import { useState, useEffect } from 'react';
+import { useBirthdayData, BirthdayPerson, VideoItem } from '@/hooks/useBirthdayData';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useToast } from '@/hooks/use-toast';
+import { Eye, Plus, Trash2, Edit2, X, Save, Video, Users, Monitor, Calendar } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
+interface WeekBirthday {
+  date: string;
+  dayName: string;
+  count: number;
+  people: Array<{ name: string; department: string }>;
+}
+
+const Admin = () => {
+  const { data, activeVideos, addPerson, removePerson, updatePerson, isLoaded, uploadVideo, addVideoByUrl, deleteVideo, deleteAllVideos, getTomorrowBirthdays, getWeekBirthdays } = useBirthdayData();
+  const { toast } = useToast();
+  
+  const [newName, setNewName] = useState('');
+  const [newPosition, setNewPosition] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editPosition, setEditPosition] = useState('');
+  
+  // Video state
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [videoUrl, setVideoUrl] = useState('');
+  const [videoPriority, setVideoPriority] = useState(10);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isAddingUrl, setIsAddingUrl] = useState(false);
+  
+  // Tomorrow birthdays count
+  const [tomorrowCount, setTomorrowCount] = useState<number | null>(null);
+  const [weekBirthdays, setWeekBirthdays] = useState<WeekBirthday[]>([]);
+  const [isLoadingWeek, setIsLoadingWeek] = useState(false);
+  
+  useEffect(() => {
+    if (isLoaded && getTomorrowBirthdays && getWeekBirthdays) {
+      getTomorrowBirthdays().then(count => {
+        console.log('Tomorrow count:', count);
+        setTomorrowCount(count);
+      }).catch(err => {
+        console.error('Error loading tomorrow count:', err);
+      });
+      
+      setIsLoadingWeek(true);
+      getWeekBirthdays()
+        .then(week => {
+          console.log('✅ Week birthdays loaded in Admin:', week);
+          console.log('✅ Week birthdays length:', week?.length || 0);
+          if (week && Array.isArray(week)) {
+            setWeekBirthdays(week);
+          } else {
+            console.warn('⚠️ Week birthdays is not an array:', week);
+            setWeekBirthdays([]);
+          }
+          setIsLoadingWeek(false);
+        })
+        .catch(err => {
+          console.error('❌ Error loading week birthdays:', err);
+          setWeekBirthdays([]);
+          setIsLoadingWeek(false);
+        });
+    }
+  }, [isLoaded, getTomorrowBirthdays, getWeekBirthdays]);
+
+  const handleAdd = () => {
+    if (!newName.trim() || !newPosition.trim()) {
+      toast({
+        title: "Xatolik",
+        description: "Iltimos, ism va lavozimni kiriting",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (data.length >= 10) {
+      toast({
+        title: "Xatolik",
+        description: "Maksimum 10 ta ism qo'shish mumkin",
+        variant: "destructive",
+      });
+      return;
+    }
+    addPerson(newName.trim(), newPosition.trim());
+    setNewName('');
+    setNewPosition('');
+    toast({
+      title: "Qo'shildi! ✓",
+      description: "Yangi ism ro'yxatga qo'shildi",
+    });
+  };
+
+  const handleEdit = (person: BirthdayPerson) => {
+    setEditingId(person.id);
+    setEditName(person.name);
+    setEditPosition(person.position);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editName.trim() || !editPosition.trim() || !editingId) return;
+    updatePerson(editingId, editName.trim(), editPosition.trim());
+    setEditingId(null);
+    toast({
+      title: "Saqlandi! ✓",
+      description: "Ma'lumotlar yangilandi",
+    });
+  };
+
+  const handleDelete = (id: string) => {
+    removePerson(id);
+    toast({
+      title: "O'chirildi",
+      description: "Ism ro'yxatdan o'chirildi",
+    });
+  };
+
+  // Video handlers
+  const handleUploadVideo = async () => {
+    if (!uploadFile) return;
+    setIsUploading(true);
+
+    const res = await uploadVideo(uploadFile, videoPriority);
+
+    setIsUploading(false);
+    setUploadFile(null);
+
+    const input = document.getElementById('videoInput') as HTMLInputElement;
+    if (input) input.value = '';
+
+    if (res.success) {
+      toast({ title: "Video yuklandi! ✓", description: "Video muvaffaqiyatli qo'shildi" });
+    } else {
+      const errorMsg = (res.error as any)?.message || "";
+      let description = "Yuklashda xatolik yuz berdi";
+      
+      if (errorMsg.includes("exceeded the maximum allowed size")) {
+        description = "Fayl hajmi juda katta (maksimum 50MB). Iltimos, kichikroq fayl yuklang yoki havola orqali qo'shing.";
+      }
+
+      toast({ 
+        title: "Xatolik", 
+        description: description, 
+        variant: "destructive" 
+      });
+    }
+  };
+
+  const handleAddVideoUrl = async () => {
+    if (!videoUrl.trim()) return;
+    setIsAddingUrl(true);
+
+    const res = await addVideoByUrl(videoUrl.trim(), videoPriority);
+
+    setIsAddingUrl(false);
+    if (res.success) {
+      setVideoUrl('');
+      setVideoPriority(10);
+      toast({ title: "Havola qo'shildi! ✓", description: "Video muvaffaqiyatli ro'yxatga kiritildi" });
+    } else {
+      toast({ title: "Xatolik", description: "Havolani saqlashda xatolik", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteVideo = async (video: VideoItem) => {
+    const res = await deleteVideo(video.url);
+    if (res.success) {
+      toast({ title: "Video o'chirildi", description: "Video ro'yxatdan olib tashlandi" });
+    } else {
+      toast({ title: "Xatolik", description: "O'chirishda xatolik", variant: "destructive" });
+    }
+  };
+
+  const handleDeleteAllVideos = async () => {
+    if (!confirm("Barcha videolarni o'chirishni xohlaysizmi? Bu amalni qaytarib bo'lmaydi.")) {
+      return;
+    }
+
+    const res = await deleteAllVideos();
+    if (res.success) {
+      toast({ title: "Barcha videolar o'chirildi", description: "Barcha videolar ro'yxatdan olib tashlandi" });
+    } else {
+      toast({ title: "Xatolik", description: "O'chirishda xatolik", variant: "destructive" });
+    }
+  };
+
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <p className="text-muted-foreground">Yuklanmoqda...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-3 lg:p-4 overflow-y-auto">
+      {/* Header */}
+      <div className="max-w-[1800px] mx-auto mb-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl lg:text-3xl font-bold text-white flex items-center gap-3">
+              <Monitor className="h-7 w-7 text-blue-400" />
+              SQB LED Ekran Boshqaruvi
+            </h1>
+            <p className="text-slate-400 mt-1">
+              Imeninniklar: {data.length}/10 • Videolar: {activeVideos?.length || 0}
+            </p>
+          </div>
+          <Link to="/">
+            <Button className="bg-blue-600 hover:bg-blue-700 h-10 px-5">
+              <Eye className="mr-2 h-4 w-4" />
+              Ekranni Ko'rish
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      {/* Main Content - 2 Column Layout */}
+      <div className="max-w-[1800px] mx-auto grid grid-cols-1 lg:grid-cols-2 gap-4">
+        
+        {/* LEFT COLUMN - Settings */}
+        <div className="space-y-2">
+          {/* Add New Person */}
+          <Card className="bg-white/10 backdrop-blur-lg border-white/20">
+            <CardHeader className="pb-2 pt-2 px-2">
+              <CardTitle className="text-white text-xs flex items-center gap-2">
+                <Users className="h-3.5 w-3.5 text-amber-400" />
+                Yangi Imeninnik Qo'shish
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-2">
+              <div className="flex gap-1.5">
+                <Input
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="Ism Familiya"
+                  className="bg-white/10 border-white/20 text-white placeholder:text-slate-500 h-8 text-xs"
+                />
+                <Input
+                  value={newPosition}
+                  onChange={(e) => setNewPosition(e.target.value)}
+                  placeholder="Lavozimi"
+                  className="bg-white/10 border-white/20 text-white placeholder:text-slate-500 h-8 text-xs"
+                />
+                <Button 
+                  onClick={handleAdd}
+                  disabled={data.length >= 10}
+                  className="bg-emerald-600 hover:bg-emerald-700 h-8 px-3"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* People List */}
+          <Card className="bg-white/10 backdrop-blur-lg border-white/20">
+            <CardHeader className="pb-2 pt-2 px-2">
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-white text-xs">Bugungi Imeninniklar</CardTitle>
+                <span className="text-slate-400 text-[10px]">
+                  {data.length === 0 ? "Bo'sh" : `${data.length}/10`}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="p-2">
+              <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">
+                {data.length === 0 ? (
+                  <div className="text-center py-8 bg-white/5 rounded-lg border border-dashed border-white/10">
+                    <p className="text-slate-500 text-xs">Ro'yxat bo'sh</p>
+                  </div>
+                ) : (
+                  data.map((person, index) => (
+                    <div 
+                      key={person.id}
+                      className="bg-white/5 rounded-md p-2 border border-white/10 hover:bg-white/10 transition-colors"
+                    >
+                      {editingId === person.id ? (
+                        <div className="flex gap-1">
+                          <Input
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            className="bg-white/10 border-white/20 text-white h-7 text-xs flex-1 px-2"
+                          />
+                          <Input
+                            value={editPosition}
+                            onChange={(e) => setEditPosition(e.target.value)}
+                            className="bg-white/10 border-white/20 text-white h-7 text-xs flex-1 px-2"
+                          />
+                          <Button size="sm" onClick={handleSaveEdit} className="bg-emerald-600 hover:bg-emerald-700 h-7 w-7 p-0">
+                            <Save className="h-3 w-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditingId(null)} className="text-white hover:bg-white/10 h-7 w-7 p-0">
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <div 
+                            className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0"
+                            style={{
+                              background: 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)',
+                              color: '#1a1a2e',
+                            }}
+                          >
+                            {index + 1}
+                          </div>
+                          <div className="flex-1 min-w-0 leading-tight">
+                            <p className="text-white text-xs font-medium truncate">{person.name}</p>
+                            <p className="text-slate-400 text-[10px] truncate">{person.position}</p>
+                          </div>
+                          <div className="flex gap-0.5 flex-shrink-0">
+                            <Button size="icon" variant="ghost" onClick={() => handleEdit(person)} className="text-slate-400 hover:text-white hover:bg-white/10 h-6 w-6">
+                              <Edit2 className="h-3 w-3" />
+                            </Button>
+                            <Button size="icon" variant="ghost" onClick={() => handleDelete(person.id)} className="text-slate-400 hover:text-red-400 hover:bg-red-500/10 h-6 w-6">
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Video Management */}
+          <Card className="bg-white/10 backdrop-blur-lg border-white/20">
+            <CardHeader className="pb-2 pt-2 px-2">
+              <CardTitle className="text-white text-xs flex items-center gap-2">
+                <Video className="h-3.5 w-3.5 text-blue-400" />
+                Video Yuklash
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-2 space-y-2">
+              <Tabs defaultValue="file" className="w-full">
+                <TabsList className="grid w-full grid-cols-2 bg-slate-700/50 h-8 min-h-0">
+                  <TabsTrigger value="file" className="text-xs h-7 data-[state=active]:bg-slate-600">Fayl</TabsTrigger>
+                  <TabsTrigger value="url" className="text-xs h-7 data-[state=active]:bg-slate-600">Havola</TabsTrigger>
+                </TabsList>
+                <TabsContent value="file" className="pt-2 space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <Label className="text-slate-300 text-[10px]">Faylni tanlang</Label>
+                    <span className="text-[10px] text-slate-500">MAKS. 50MB</span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <Input
+                      id="videoInput"
+                      type="file"
+                      accept="video/mp4,video/quicktime"
+                      onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                      className="bg-white/10 border-white/20 text-white file:text-slate-400 cursor-pointer h-8 text-xs file:text-xs"
+                    />
+                    <Button
+                      onClick={handleUploadVideo}
+                      disabled={!uploadFile || isUploading}
+                      className="bg-blue-600 hover:bg-blue-700 h-8 px-3 text-xs"
+                    >
+                      {isUploading ? '...' : 'Yuklash'}
+                    </Button>
+                  </div>
+                </TabsContent>
+                <TabsContent value="url" className="pt-2 space-y-1.5">
+                   <Label className="text-slate-300 text-[10px]">Direct mp4 / Google Drive</Label>
+                  <div className="flex gap-1.5">
+                    <Input
+                      value={videoUrl}
+                      onChange={(e) => setVideoUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="bg-white/10 border-white/20 text-white h-8 text-xs"
+                    />
+                    <Button
+                      onClick={handleAddVideoUrl}
+                      disabled={!videoUrl.trim() || isAddingUrl}
+                      className="bg-indigo-600 hover:bg-indigo-700 h-8 px-3 text-xs"
+                    >
+                      {isAddingUrl ? '...' : 'OK'}
+                    </Button>
+                  </div>
+                </TabsContent>
+              </Tabs>
+              
+              {/* Priority Selection */}
+              <div className="space-y-1 pt-2 border-t border-white/10">
+                <div className="flex justify-between items-center">
+                   <Label className="text-slate-300 text-[10px]">Prioritet (1-100)</Label>
+                   <span className="text-amber-400 font-bold text-xs">{videoPriority}</span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="100"
+                  value={videoPriority}
+                  onChange={(e) => setVideoPriority(parseInt(e.target.value))}
+                  className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-amber-500 block"
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Active Videos List */}
+          <Card className="bg-white/10 backdrop-blur-lg border-white/20">
+            <CardHeader className="pb-2 pt-2 px-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-white text-xs">Aktiv Videolar ({activeVideos?.length || 0})</CardTitle>
+                {activeVideos && activeVideos.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleDeleteAllVideos}
+                    className="text-red-400 hover:text-red-300 hover:bg-red-500/10 text-[10px] h-6 px-2"
+                  >
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    Tozalash
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="p-2">
+              <div className="space-y-1.5 max-h-[150px] overflow-y-auto pr-1 custom-scrollbar">
+                {(!activeVideos || activeVideos.length === 0) ? (
+                  <div className="text-center py-6 bg-white/5 rounded-lg border border-dashed border-white/10">
+                    <p className="text-slate-500 text-[10px]">Videolar yo'q</p>
+                  </div>
+                ) : (
+                  activeVideos.map((video, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-white/5 p-1.5 rounded-md border border-white/10 hover:bg-white/10 transition-colors">
+                      <div className="flex items-center gap-2 overflow-hidden flex-1">
+                        <div className="w-5 h-5 bg-blue-500/20 rounded flex items-center justify-center text-blue-400 font-bold text-[10px] flex-shrink-0">
+                          {idx + 1}
+                        </div>
+                        <a href={video.url} target="_blank" rel="noreferrer" className="text-slate-300 hover:text-blue-400 transition-colors truncate text-[10px] flex-1">
+                          {video.url.split('/').pop()?.split('?')[0] || 'Video file'}
+                        </a>
+                        <div className="px-1.5 py-0.5 bg-amber-500/20 rounded text-amber-400 text-[10px] font-bold flex-shrink-0">
+                          P:{video.priority}
+                        </div>
+                      </div>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleDeleteVideo(video)}
+                        className="text-slate-500 hover:text-red-400 hover:bg-red-400/10 h-6 w-6 flex-shrink-0 ml-1"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+
+
+        {/* RIGHT COLUMN - Weekly Birthdays */}
+        <div>
+          <Card className="bg-slate-800/50 border-slate-700 sticky top-4">
+            <CardHeader className="pb-2 pt-2 px-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-white flex items-center gap-2 text-sm">
+                  <Calendar className="h-4 w-4 text-blue-400" />
+                  Haftalik (7 kun)
+                </CardTitle>
+                {tomorrowCount !== null && (
+                  <div className="text-right">
+                    <p className="text-slate-300 text-xs">
+                      Ertaga: {' '}
+                      <span className="font-bold text-white">
+                        {tomorrowCount === 0 ? "yo'q" : `${tomorrowCount}`}
+                      </span>
+                    </p>
+                  </div>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent className="px-3 pb-2">
+              {isLoadingWeek ? (
+                <p className="text-slate-400 text-center py-2 text-xs">Yuklanmoqda...</p>
+              ) : !weekBirthdays || weekBirthdays.length === 0 ? (
+                <div className="text-center py-2">
+                  <p className="text-slate-400 text-xs">Keyingi 7 kunda imeninniklar yo'q</p>
+                </div>
+              ) : (
+                <div className="max-h-[calc(100vh-250px)] overflow-y-auto pr-1 custom-scrollbar space-y-2">
+                  {weekBirthdays.map((day, idx) => (
+                    <div key={idx} className="bg-slate-700/30 rounded p-2 border border-slate-600/30">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="text-blue-400 font-semibold text-sm">{day.date}</span>
+                        <span className="text-slate-300 text-xs">{day.dayName}</span>
+                        <span className="text-slate-500 text-xs">({day.count})</span>
+                      </div>
+                      <div className="space-y-1 ml-0.5">
+                        {day.people.map((person, pIdx) => (
+                          <div key={pIdx} className="text-slate-300 text-xs flex items-start gap-1.5">
+                            <span className="text-slate-500 text-[10px] mt-0.5">•</span>
+                            <div className="flex-1 leading-tight">
+                              <span className="font-medium">{person.name}</span>
+                              <span className="text-slate-500 ml-1 text-[10px]">— {person.department}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Admin;

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 
 export interface BirthdayPerson {
@@ -7,12 +7,6 @@ export interface BirthdayPerson {
   department: string;
   position: string;
 }
-
-const defaultData: BirthdayPerson[] = [
-  { id: '1', name: 'Aziz Karimov', department: 'Boshqaruv', position: 'Bosh Menejer' },
-  { id: '2', name: 'Malika Rahimova', department: 'Moliya', position: 'Moliya bo\'limi boshlig\'i' },
-  { id: '3', name: 'Jasur Aliyev', department: 'IT', position: 'IT departamenti direktori' },
-];
 
 const VALID_DEPARTMENTS = [
   "O'rta biznes markazi",
@@ -69,272 +63,224 @@ export interface VideoItem {
   priority: number;
 }
 
+export interface DayBirthday {
+  date: string;
+  dayName: string;
+  count: number;
+  people: Array<{ name: string; department: string }>;
+}
+
 export const useBirthdayData = () => {
   const [data, setData] = useState<BirthdayPerson[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [activeVideos, setActiveVideos] = useState<VideoItem[]>([]);
 
+  const fetchAllEmployees = async () => {
+    let all: any[] = [];
+    let from = 0;
+    const step = 1000;
+    while (true) {
+      const { data, error } = await supabase
+        .from('employees')
+        .select('*')
+        .range(from, from + step - 1)
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      if (!data || data.length === 0) break;
+      all = all.concat(data);
+      if (data.length < step) break;
+      from += step;
+    }
+    return all;
+  };
+
   const fetchData = async () => {
-    console.log('Fetching birthdays...');
     try {
       const today = new Date();
       const month = (today.getMonth() + 1).toString().padStart(2, '0');
       const day = today.getDate().toString().padStart(2, '0');
       const monthDay = `-${month}-${day}`;
-      console.log('Looking for birthdays ending with:', monthDay);
 
-      // Get all employees and filter by month-day (ignoring year)
-      const { data: allEmployees, error: empError } = await supabase
-        .from('employees')
-        .select('*')
-        .order('name', { ascending: true });
+      const allEmployees = await fetchAllEmployees();
 
-      if (empError) {
-        console.error('Employees fetch error:', empError);
-        throw empError;
-      }
-
-      // Filter by month and day (birth_date format: YYYY-MM-DD)
-      const employees = allEmployees?.filter(e => 
+      // Filter by date
+      const employeesToday = allEmployees.filter(e =>
         e.birth_date && e.birth_date.endsWith(monthDay)
-      ) || [];
+      );
 
-      console.log('Employees found:', employees?.length || 0);
+      // Filter by department (exclude regional)
+      const filtered = employeesToday.filter(e => {
+        const dept = (e.department || "").trim().toLowerCase();
+        if (dept.includes('tarmoqlarda')) return false;
 
-      if (employees && employees.length > 0) {
-        // Robust filter: trim and case-insensitive check
-        const filtered = employees.filter(e => {
-          const dept = (e.department || "").trim();
-          return VALID_DEPARTMENTS.some(vd => vd.toLowerCase() === dept.toLowerCase());
+        return VALID_DEPARTMENTS.some(vd => {
+          const vdLower = vd.toLowerCase();
+          return dept.includes(vdLower) || vdLower.includes(dept);
         });
+      });
 
-        console.log('Filtered employees:', filtered.length);
-
-        setData(filtered.map(e => {
-          // Remove otchestvo - keep only first 2 words (FAMILIYA ISMI)
-          const fullName = e.name || 'Noma\'lum';
-          const nameParts = fullName.trim().split(' ');
-          const shortName = nameParts.slice(0, 2).join(' ');
-          
-          return {
-            id: e.id,
-            name: shortName,
-            department: e.department || '',
-            position: e.position || ''
-          };
-        }));
-      } else {
-        setData([]);
-      }
+      setData(filtered.map(e => {
+        const nameParts = (e.name || '').split(' ');
+        return {
+          id: e.id,
+          name: nameParts.slice(0, 2).join(' '),
+          department: e.department || '',
+          position: e.position || ''
+        };
+      }));
 
     } catch (error) {
       console.error('Data fetch error:', error);
-      setData([]); // Don't show default data if DB is connected but empty
+      setData([]);
     } finally {
-      console.log('Setting isLoaded to true');
       setIsLoaded(true);
     }
 
-    // Fetch videos separately (non-blocking)
+    // Fetch videos
     (async () => {
       try {
-        const { data: videos, error: videoError } = await supabase
+        const { data: videos } = await supabase
           .from('videos')
           .select('*')
           .eq('active', true)
-          .order('priority', { ascending: false })
-          .order('created_at', { ascending: false });
+          .order('priority', { ascending: false });
 
-        if (videoError) {
-          console.error('Video fetch error:', videoError);
-          setActiveVideos([]);
-          return;
-        }
-
-        if (videos && videos.length > 0) {
-          const currentValidVideos = videos.filter(v => {
-            const hasStarted = !v.start_time || new Date(v.start_time) <= new Date();
-            const hasNotEnded = !v.end_time || new Date(v.end_time) >= new Date();
-            return hasStarted && hasNotEnded;
-          });
-
-          setActiveVideos(currentValidVideos.map(v => ({ url: v.url, priority: v.priority || 10 })));
-        } else {
-          setActiveVideos([]);
+        if (videos) {
+          setActiveVideos(videos.map(v => ({ url: v.url, priority: v.priority || 10 })));
         }
       } catch (e) {
-        console.error('Video fetch error:', e);
-        setActiveVideos([]);
+        console.error(e);
       }
     })();
   };
 
   useEffect(() => {
     fetchData();
-
-    // Safety timeout: always stop loading after 5 seconds
-    const safetyTimer = setTimeout(() => {
-      setIsLoaded(true);
-    }, 5000);
-
-    // Subscribe to changes
     const channel = supabase
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public' }, () => fetchData())
       .subscribe();
-
     return () => {
-      clearTimeout(safetyTimer);
       supabase.removeChannel(channel);
     };
   }, []);
 
   const addPerson = async (name: string, position: string) => {
-    try {
-      const today = new Date();
-      const month = (today.getMonth() + 1).toString().padStart(2, '0');
-      const day = today.getDate().toString().padStart(2, '0');
-      const birthDate = `2000-${month}-${day}`; // Mock birthdate for today
-
-      const { error } = await supabase.from('employees').insert([{
-        name,
-        position,
-        department: 'Boshqaruv', // Default
-        birth_date: birthDate
-      }]);
-      if (error) throw error;
-    } catch (e) {
-      console.error(e);
-    }
+    const today = new Date();
+    const month = (today.getMonth() + 1).toString().padStart(2, '0');
+    const day = today.getDate().toString().padStart(2, '0');
+    await supabase.from('employees').insert([{
+      name, position, department: 'Boshqaruv', birth_date: `2000-${month}-${day}`
+    }]);
   };
 
   const removePerson = async (id: string) => {
-    try {
-      const { error } = await supabase.from('employees').delete().eq('id', id);
-      if (error) throw error;
-    } catch (e) {
-      console.error(e);
-    }
+    await supabase.from('employees').delete().eq('id', id);
   };
 
   const updatePerson = async (id: string, name: string, position: string) => {
-    try {
-      const { error } = await supabase.from('employees').update({ name, position }).eq('id', id);
-      if (error) throw error;
-    } catch (e) {
-      console.error(e);
-    }
+    await supabase.from('employees').update({ name, position }).eq('id', id);
   };
 
   const uploadVideo = async (file: File, priority: number = 10) => {
     try {
-      const fileName = `admin_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '')}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('videos')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicData } = supabase.storage
-        .from('videos')
-        .getPublicUrl(fileName);
-
-      const { error: dbError } = await supabase.from('videos').insert([{
-        url: publicData.publicUrl,
-        active: true,
-        priority: priority,
-        created_at: new Date().toISOString()
-      }]);
-
-      if (dbError) throw dbError;
+      const fileName = `admin_${Date.now()}_${file.name}`;
+      await supabase.storage.from('videos').upload(fileName, file);
+      const { data: publicData } = supabase.storage.from('videos').getPublicUrl(fileName);
+      await supabase.from('videos').insert([{ url: publicData.publicUrl, active: true, priority }]);
       return { success: true };
     } catch (e) {
-      console.error(e);
       return { success: false, error: e };
     }
   };
 
   const addVideoByUrl = async (url: string, priority: number = 10) => {
     try {
-      let finalUrl = url;
-      // Google Drive converter - handle both /d/ and /uc?export=download formats
-      if (url.includes('drive.google.com')) {
-        let fileId = null;
-        
-        // Try /d/ format first
-        const dMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-        if (dMatch) {
-          fileId = dMatch[1];
-        } else {
-          // Try /uc?export=download format
-          const ucMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
-          if (ucMatch) {
-            fileId = ucMatch[1];
-          }
-        }
-        
-        if (fileId) {
-          finalUrl = `https://drive.google.com/file/d/${fileId}/preview`;
-        }
-      }
-
-      const { error: dbError } = await supabase.from('videos').insert([{
-        url: finalUrl,
-        active: true,
-        priority: priority,
-        created_at: new Date().toISOString()
-      }]);
-
-      if (dbError) throw dbError;
+      await supabase.from('videos').insert([{ url, active: true, priority }]);
       return { success: true };
     } catch (e) {
-      console.error(e);
       return { success: false, error: e };
     }
   };
 
-  const deleteVideo = async (videoUrl: string) => {
+  const deleteVideo = async (url: string) => {
     try {
-      const { error } = await supabase
-        .from('videos')
-        .delete()
-        .eq('url', videoUrl);
-
-      if (error) throw error;
+      await supabase.from('videos').delete().eq('url', url);
       return { success: true };
     } catch (e) {
-      console.error(e);
       return { success: false, error: e };
     }
   };
 
   const deleteAllVideos = async () => {
     try {
-      // First get all video IDs
-      const { data: videos, error: fetchError } = await supabase
-        .from('videos')
-        .select('id');
-
-      if (fetchError) throw fetchError;
-
-      if (!videos || videos.length === 0) {
-        return { success: true }; // Nothing to delete
-      }
-
-      // Delete all videos by IDs
-      const { error } = await supabase
-        .from('videos')
-        .delete()
-        .in('id', videos.map(v => v.id));
-
-      if (error) throw error;
+      await supabase.from('videos').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       return { success: true };
     } catch (e) {
-      console.error(e);
       return { success: false, error: e };
     }
   };
 
-  return { data, activeVideos, isLoaded, addPerson, removePerson, updatePerson, uploadVideo, addVideoByUrl, deleteVideo, deleteAllVideos };
+  const getTomorrowBirthdays = useCallback(async (): Promise<number> => {
+    try {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const md = `-${(tomorrow.getMonth() + 1).toString().padStart(2, '0')}-${tomorrow.getDate().toString().padStart(2, '0')}`;
+      const all = await fetchAllEmployees();
+      return all.filter(e => {
+        const dept = (e.department || "").trim().toLowerCase();
+        if (dept.includes('tarmoqlarda')) return false;
+        const valid = VALID_DEPARTMENTS.some(vd => dept.includes(vd.toLowerCase()) || vd.toLowerCase().includes(dept));
+        return valid && e.birth_date && e.birth_date.endsWith(md);
+      }).length;
+    } catch { return 0; }
+  }, []);
+
+  const getWeekBirthdays = useCallback(async (): Promise<DayBirthday[]> => {
+    try {
+      const all = await fetchAllEmployees();
+      const filtered = all.filter(e => {
+        const dept = (e.department || "").trim().toLowerCase();
+        if (dept.includes('tarmoqlarda')) return false;
+        return VALID_DEPARTMENTS.some(vd => dept.includes(vd.toLowerCase()) || vd.toLowerCase().includes(dept));
+      });
+
+      const birthdayMap = new Map<string, any[]>();
+      filtered.forEach(e => {
+        if (e.birth_date) {
+          const md = e.birth_date.slice(5);
+          if (!birthdayMap.has(md)) birthdayMap.set(md, []);
+          birthdayMap.get(md)!.push(e);
+        }
+      });
+
+      const weekData: DayBirthday[] = [];
+      const today = new Date();
+      const dayNames = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
+
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() + i);
+        const md = `${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+        const emps = birthdayMap.get(md) || [];
+        weekData.push({
+          date: `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}`,
+          dayName: i === 0 ? 'Bugun' : i === 1 ? 'Ertaga' : dayNames[d.getDay()],
+          count: emps.length,
+          people: emps.map(e => ({
+            name: (e.name || '').split(' ').slice(0, 2).join(' '),
+            department: e.department || ''
+          }))
+        });
+      }
+      return weekData;
+    } catch { return []; }
+  }, []);
+
+  return {
+    data, activeVideos, isLoaded, addPerson, removePerson, updatePerson,
+    uploadVideo, addVideoByUrl, deleteVideo, deleteAllVideos,
+    getTomorrowBirthdays, getWeekBirthdays
+  };
 };

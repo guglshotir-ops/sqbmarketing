@@ -1,0 +1,585 @@
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/lib/supabase';
+
+export interface BirthdayPerson {
+  id: string;
+  name: string;
+  department: string;
+  position: string;
+}
+
+const defaultData: BirthdayPerson[] = [
+  { id: '1', name: 'Aziz Karimov', department: 'Boshqaruv', position: 'Bosh Menejer' },
+  { id: '2', name: 'Malika Rahimova', department: 'Moliya', position: 'Moliya bo\'limi boshlig\'i' },
+  { id: '3', name: 'Jasur Aliyev', department: 'IT', position: 'IT departamenti direktori' },
+];
+
+const VALID_DEPARTMENTS = [
+  "O'rta biznes markazi",
+  "Agrosanoat klasterini moliyalashtirishni muvofiqlashtirish xizmati",
+  "Aktivlar va passivlar xizmati",
+  "Aloqa markazi",
+  "Axborotlarni muhofaza qilish markazi",
+  "Aholini moliyaviy qo'llab-quvvatlash va tadbirlarga jalb qilish xizmati",
+  "Axborot texnologiyalari departamenti",
+  "Bank kartalari tizimlarini qo'llab-quvvatlash departamenti",
+  "Bank tarmoqlari faoliyatini muvofiqlashtirish departamenti",
+  "Bankni strategik rivojlantirish departamenti",
+  "Birinchi bo'lim",
+  "Buxgalteriya hisobi va hisobot departamenti",
+  "Ijroni boshqarish va rivojlanishni tahlil qilish departamenti",
+  "Investitsion bank departamenti",
+  "Ichki audit departamenti",
+  "Ichki xavfsizlik departamenti",
+  "Komplaens nazorat departamenti",
+  "Korporativ biznes departamenti",
+  "Korporativ boshqaruv xizmati",
+  "Korporativ markaz",
+  "Korrupsiyaga qarshi kurashish xizmati",
+  "Kredit monitoringi va nazorati departamenti",
+  "Kreditlarni ma'qullash departamenti",
+  "Kreditlash departamenti",
+  "Loyiha boshqaruvi ofisi",
+  "Marketing departamenti",
+  "Ma'lumotlarni boshqarish markazi",
+  "Ma'muriy-xo'jalik departamenti",
+  "Mikro va kichik biznes departamenti",
+  "Moliya institutlari va investorlar bilan ishlash departamenti",
+  "Moliyaviy menejment xizmati",
+  "Operatsion departament",
+  "Raqamli biznes departamenti",
+  "Rahbariyat",
+  "Risk menejment departamenti",
+  "Sun'iy intellekt departamenti",
+  "Tranzaksion bank departamenti",
+  "Xalqaro moliyaviy hisobotlar va konsalting xizmati",
+  "Xaridlarni tashkil etish xizmati",
+  "Xodimlar va tashkiliy rivojlantirish departamenti",
+  "Chakana biznes departamenti",
+  "Yuridik departament",
+  "Yakuniy nazorat xizmati",
+  "Kredit qarzdorliklari bilan ishlash departamenti",
+  "G'aznachilik departamenti",
+  "Qurilish materiallari sanoatini rivojlantirish departamenti",
+  "Sustainable Finance departamenti"
+];
+
+export interface VideoItem {
+  url: string;
+  priority: number;
+}
+
+export const useBirthdayData = () => {
+  const [data, setData] = useState<BirthdayPerson[]>([]);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [activeVideos, setActiveVideos] = useState<VideoItem[]>([]);
+
+  const fetchData = async () => {
+    console.log('Fetching birthdays...');
+    try {
+      const today = new Date();
+      const month = (today.getMonth() + 1).toString().padStart(2, '0');
+      const day = today.getDate().toString().padStart(2, '0');
+      const monthDay = `-${month}-${day}`;
+      console.log('Looking for birthdays ending with:', monthDay);
+
+      // Get all employees and filter by month-day (ignoring year)
+      const { data: allEmployees, error: empError } = await supabase
+        .from('employees')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (empError) {
+        console.error('Employees fetch error:', empError);
+        throw empError;
+      }
+
+      // Filter by month and day (birth_date format: YYYY-MM-DD)
+      const employees = allEmployees?.filter(e => 
+        e.birth_date && e.birth_date.endsWith(monthDay)
+      ) || [];
+
+      console.log('Employees found:', employees?.length || 0);
+
+      if (employees && employees.length > 0) {
+        // Debug: log all employees before filtering
+        console.log('All employees today:', employees.map(e => ({
+          name: e.name,
+          dept: e.department
+        })));
+
+        // Simple filter: check if department matches any valid department (flexible matching)
+        const filtered = employees.filter(e => {
+          const dept = (e.department || "").trim().toLowerCase();
+          
+          // Skip regional departments (Tarmoqlarda)
+          if (dept.includes('tarmoqlarda')) {
+            return false;
+          }
+          
+          // Check against valid departments
+          const matches = VALID_DEPARTMENTS.some(vd => {
+            const validDept = vd.toLowerCase();
+            
+            // Normalize both: remove hyphens and extra spaces for comparison
+            const normalize = (str: string) => {
+              return str.replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+            };
+            const normalizedDept = normalize(dept);
+            const normalizedValid = normalize(validDept);
+            
+            // Exact match after normalization
+            if (normalizedDept === normalizedValid) return true;
+            
+            // Partial match: if department contains valid department name
+            if (normalizedDept.includes(normalizedValid) || normalizedValid.includes(normalizedDept)) {
+              return true;
+            }
+            
+            return false;
+          });
+          
+          if (!matches) {
+            console.log(`❌ Employee filtered out: ${e.name} - Department: "${e.department}"`);
+          }
+          return matches;
+        });
+
+        console.log('✅ Filtered employees (will show on screen):', filtered.length);
+        if (filtered.length > 0) {
+          console.log('Filtered employees:', filtered.map(e => `${e.name} - ${e.department}`));
+        }
+
+        setData(filtered.map(e => {
+          // Remove otchestvo - keep only first 2 words (FAMILIYA ISMI)
+          const fullName = e.name || 'Noma\'lum';
+          const nameParts = fullName.trim().split(' ');
+          const shortName = nameParts.slice(0, 2).join(' ');
+          
+          return {
+          id: e.id,
+            name: shortName,
+          department: e.department || '',
+          position: e.position || ''
+          };
+        }));
+      } else {
+        setData([]);
+      }
+
+    } catch (error) {
+      console.error('Data fetch error:', error);
+      setData([]); // Don't show default data if DB is connected but empty
+    } finally {
+      console.log('Setting isLoaded to true');
+      setIsLoaded(true);
+    }
+
+    // Fetch videos separately (non-blocking)
+    (async () => {
+      try {
+        const { data: videos, error: videoError } = await supabase
+          .from('videos')
+          .select('*')
+          .eq('active', true)
+          .order('priority', { ascending: false })
+          .order('created_at', { ascending: false });
+
+        if (videoError) {
+          console.error('Video fetch error:', videoError);
+          setActiveVideos([]);
+          return;
+        }
+
+        if (videos && videos.length > 0) {
+          const currentValidVideos = videos.filter(v => {
+            const hasStarted = !v.start_time || new Date(v.start_time) <= new Date();
+            const hasNotEnded = !v.end_time || new Date(v.end_time) >= new Date();
+            return hasStarted && hasNotEnded;
+          });
+
+          setActiveVideos(currentValidVideos.map(v => ({ url: v.url, priority: v.priority || 10 })));
+        } else {
+          setActiveVideos([]);
+        }
+      } catch (e) {
+        console.error('Video fetch error:', e);
+        setActiveVideos([]);
+      }
+    })();
+  };
+
+  useEffect(() => {
+    // ✅ ПОЛНОСТЬЮ АВТОМАТИЧЕСКАЯ СИСТЕМА - НЕ ТРЕБУЕТ РУЧНОГО ВМЕШАТЕЛЬСТВА!
+    // 1. Автоматически загружает данные при старте
+    // 2. Автоматически обновляется в полночь (новый день) - показывает людей в их день рождения
+    // 3. Автоматически обновляется при изменениях в Supabase (realtime)
+    // 4. Автоматически показывает людей в их день рождения - код сам находит нужных людей по дате
+    // ВСЁ РАБОТАЕТ АВТОМАТИЧЕСКИ - НЕ НУЖНО НИЧЕГО ДЕЛАТЬ ВРУЧНУЮ!
+    
+    fetchData();
+
+    // Safety timeout: always stop loading after 5 seconds
+    const safetyTimer = setTimeout(() => {
+      setIsLoaded(true);
+    }, 5000);
+
+    // Subscribe to changes in Supabase (realtime)
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+        console.log('🔄 Realtime update: data changed in Supabase, automatically refreshing...');
+        fetchData();
+      })
+      .subscribe();
+
+    // Auto-refresh at midnight (when day changes) - ПОЛНОСТЬЮ АВТОМАТИЧЕСКОЕ ОБНОВЛЕНИЕ
+    const scheduleMidnightRefresh = () => {
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0); // Next midnight
+      
+      const msUntilMidnight = tomorrow.getTime() - now.getTime();
+      
+      console.log(`⏰ Автоматическое обновление в полночь через ${Math.round(msUntilMidnight / 1000 / 60)} минут`);
+      
+      const midnightTimer = setTimeout(() => {
+        console.log('📅 Полночь! Автоматически обновляю данные для нового дня...');
+        console.log('✅ Система сама найдет всех именинников на сегодня');
+        fetchData();
+        // Schedule next midnight refresh
+        scheduleMidnightRefresh();
+      }, msUntilMidnight);
+      
+      return midnightTimer;
+    };
+
+    const midnightTimer = scheduleMidnightRefresh();
+
+    return () => {
+      clearTimeout(safetyTimer);
+      clearTimeout(midnightTimer);
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const addPerson = async (name: string, position: string) => {
+    try {
+      const today = new Date();
+      const month = (today.getMonth() + 1).toString().padStart(2, '0');
+      const day = today.getDate().toString().padStart(2, '0');
+      const birthDate = `2000-${month}-${day}`; // Mock birthdate for today
+
+      const { error } = await supabase.from('employees').insert([{
+        name,
+        position,
+        department: 'Boshqaruv', // Default
+        birth_date: birthDate
+      }]);
+      if (error) throw error;
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const removePerson = async (id: string) => {
+    try {
+      const { error } = await supabase.from('employees').delete().eq('id', id);
+      if (error) throw error;
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const updatePerson = async (id: string, name: string, position: string) => {
+    try {
+      const { error } = await supabase.from('employees').update({ name, position }).eq('id', id);
+      if (error) throw error;
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const uploadVideo = async (file: File, priority: number = 10) => {
+    try {
+      const fileName = `admin_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g, '')}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicData } = supabase.storage
+        .from('videos')
+        .getPublicUrl(fileName);
+
+      const { error: dbError } = await supabase.from('videos').insert([{
+        url: publicData.publicUrl,
+        active: true,
+        priority: priority,
+        created_at: new Date().toISOString()
+      }]);
+
+      if (dbError) throw dbError;
+      return { success: true };
+    } catch (e) {
+      console.error(e);
+      return { success: false, error: e };
+    }
+  };
+
+  const addVideoByUrl = async (url: string, priority: number = 10) => {
+    try {
+      let finalUrl = url;
+      // Google Drive converter - handle both /d/ and /uc?export=download formats
+      if (url.includes('drive.google.com')) {
+        let fileId = null;
+        
+        // Try /d/ format first
+        const dMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (dMatch) {
+          fileId = dMatch[1];
+        } else {
+          // Try /uc?export=download format
+          const ucMatch = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+          if (ucMatch) {
+            fileId = ucMatch[1];
+          }
+        }
+        
+        if (fileId) {
+          finalUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+        }
+      }
+
+      const { error: dbError } = await supabase.from('videos').insert([{
+        url: finalUrl,
+        active: true,
+        priority: priority,
+        created_at: new Date().toISOString()
+      }]);
+
+      if (dbError) throw dbError;
+      return { success: true };
+    } catch (e) {
+      console.error(e);
+      return { success: false, error: e };
+    }
+  };
+
+  const deleteVideo = async (videoUrl: string) => {
+    try {
+      const { error } = await supabase
+        .from('videos')
+        .delete()
+        .eq('url', videoUrl);
+
+      if (error) throw error;
+      return { success: true };
+    } catch (e) {
+      console.error(e);
+      return { success: false, error: e };
+    }
+  };
+
+  const deleteAllVideos = async () => {
+    try {
+      // First get all video IDs
+      const { data: videos, error: fetchError } = await supabase
+        .from('videos')
+        .select('id');
+
+      if (fetchError) throw fetchError;
+
+      if (!videos || videos.length === 0) {
+        return { success: true }; // Nothing to delete
+      }
+
+      // Delete all videos by IDs
+      const { error } = await supabase
+        .from('videos')
+        .delete()
+        .in('id', videos.map(v => v.id));
+
+      if (error) throw error;
+      return { success: true };
+    } catch (e) {
+      console.error(e);
+      return { success: false, error: e };
+    }
+  };
+
+  const getTomorrowBirthdays = useCallback(async (): Promise<number> => {
+    try {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const month = (tomorrow.getMonth() + 1).toString().padStart(2, '0');
+      const day = tomorrow.getDate().toString().padStart(2, '0');
+      const monthDay = `${month}-${day}`; // MM-DD format
+
+      const { data: allEmployees, error } = await supabase
+        .from('employees')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching tomorrow birthdays:', error);
+        return 0;
+      }
+
+      // Apply department filter once
+      const normalize = (str: string) => {
+        return str.replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+      };
+
+      const filteredEmployees = (allEmployees || []).filter(e => {
+        const dept = (e.department || "").trim().toLowerCase();
+        if (dept.includes('tarmoqlarda')) return false;
+        
+        return VALID_DEPARTMENTS.some(vd => {
+          const validDept = vd.toLowerCase();
+          const normalizedDept = normalize(dept);
+          const normalizedValid = normalize(validDept);
+          if (normalizedDept === normalizedValid) return true;
+          return normalizedDept.includes(normalizedValid) || normalizedValid.includes(normalizedDept);
+        });
+      });
+
+      // Create map for tomorrow's date only
+      const employees = filteredEmployees.filter(emp => {
+        if (emp.birth_date) {
+          const parts = emp.birth_date.split('-');
+          if (parts.length === 3) {
+            const empMonthDay = `${parts[1]}-${parts[2]}`;
+            return empMonthDay === monthDay;
+          }
+        }
+        return false;
+      });
+
+      return employees.length;
+    } catch (error) {
+      console.error('Error getting tomorrow birthdays:', error);
+      return 0;
+    }
+  }, []);
+
+  interface WeekBirthday {
+    date: string;
+    dayName: string;
+    count: number;
+    people: Array<{ name: string; department: string }>;
+  }
+
+  const getWeekBirthdays = useCallback(async (): Promise<WeekBirthday[]> => {
+    try {
+      console.log('📅 Fetching week birthdays...');
+      const { data: allEmployees, error } = await supabase
+        .from('employees')
+        .select('*')
+        .order('name', { ascending: true });
+
+      if (error) {
+        console.error('❌ Error fetching week birthdays:', error);
+        return [];
+      }
+
+      if (!allEmployees || allEmployees.length === 0) {
+        console.log('⚠️ No employees in database');
+        return [];
+      }
+
+      console.log('✅ Total employees in DB:', allEmployees.length);
+
+      // Apply department filter once for all employees
+      const normalize = (str: string) => {
+        return str.replace(/-/g, ' ').replace(/\s+/g, ' ').trim();
+      };
+
+      const filteredEmployees = allEmployees.filter(e => {
+        const dept = (e.department || "").trim().toLowerCase();
+        if (dept.includes('tarmoqlarda')) return false;
+        
+        return VALID_DEPARTMENTS.some(vd => {
+          const validDept = vd.toLowerCase();
+          const normalizedDept = normalize(dept);
+          const normalizedValid = normalize(validDept);
+          if (normalizedDept === normalizedValid) return true;
+          return normalizedDept.includes(normalizedValid) || normalizedValid.includes(normalizedDept);
+        });
+      });
+
+      console.log('✅ After department filter:', filteredEmployees.length, 'employees');
+
+      // Create a map: key = "MM-DD", value = array of employees
+      const birthdayMap = new Map<string, typeof filteredEmployees>();
+      
+      filteredEmployees.forEach(emp => {
+        if (emp.birth_date) {
+          // Extract MM-DD from birth_date (format: YYYY-MM-DD)
+          const parts = emp.birth_date.split('-');
+          if (parts.length === 3) {
+            const monthDay = `${parts[1]}-${parts[2]}`; // MM-DD
+            if (!birthdayMap.has(monthDay)) {
+              birthdayMap.set(monthDay, []);
+            }
+            birthdayMap.get(monthDay)!.push(emp);
+          }
+        }
+      });
+
+      console.log('✅ Birthday map created with', birthdayMap.size, 'unique dates');
+
+      // Now just iterate through next 7 days and get from map
+      // Show ALL days, even if no birthdays (so user can see the full week)
+      const weekData: WeekBirthday[] = [];
+      const today = new Date();
+      const dayNames = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
+
+      for (let i = 0; i < 7; i++) {
+        const checkDate = new Date(today);
+        checkDate.setDate(today.getDate() + i);
+        const month = (checkDate.getMonth() + 1).toString().padStart(2, '0');
+        const day = checkDate.getDate().toString().padStart(2, '0');
+        const monthDay = `${month}-${day}`; // MM-DD format
+
+        const employees = birthdayMap.get(monthDay) || [];
+        const dayName = dayNames[checkDate.getDay()];
+        
+        // Always add day, even if no birthdays
+        weekData.push({
+          date: `${day}.${month}`,
+          dayName: i === 0 ? 'Bugun' : i === 1 ? 'Ertaga' : dayName,
+          count: employees.length,
+          people: employees.map(e => {
+            const nameParts = (e.name || '').trim().split(' ');
+            const shortName = nameParts.slice(0, 2).join(' ');
+            return {
+              name: shortName,
+              department: e.department || ''
+            };
+          })
+        });
+        
+        if (employees.length > 0) {
+          console.log(`✅ Found ${employees.length} birthdays for ${day}.${month} (${dayName})`);
+        } else {
+          console.log(`ℹ️ No birthdays for ${day}.${month} (${dayName})`);
+        }
+      }
+
+      console.log('✅ Week birthdays result:', weekData.length, 'days with birthdays');
+      if (weekData.length === 0) {
+        console.log('⚠️ No birthdays found in next 7 days');
+      }
+      return weekData;
+    } catch (error) {
+      console.error('❌ Error getting week birthdays:', error);
+      return [];
+    }
+  }, []);
+
+  return { data, activeVideos, isLoaded, addPerson, removePerson, updatePerson, uploadVideo, addVideoByUrl, deleteVideo, deleteAllVideos, getTomorrowBirthdays, getWeekBirthdays };
+};
