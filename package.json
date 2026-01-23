@@ -9,7 +9,9 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "predeploy": "npm run build",
+    "save": "node checkpoint.cjs",
+    "undo": "git reset --hard HEAD",
+    "predeploy": "npm run save \"Before deploy\" && npm run build",
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
