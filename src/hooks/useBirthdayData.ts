@@ -147,7 +147,6 @@ export const useBirthdayData = () => {
 
     // Use local videos - works offline, no CORS, no external APIs
     setActiveVideos(localVideos);
-    console.log('Using local videos (3 files)');
   };
 
   useEffect(() => {

@@ -7,10 +7,7 @@ import { useState, useEffect, useRef } from 'react';
 const LED_WIDTH = 1536;
 const LED_HEIGHT = 3456;
 
-// Color palette - Dark blue theme for seamless transitions with blue videos
-const COLOR_BG = '#001a2c'; // Deep SQB Blue
-const COLOR_TEXT = '#ffffff';
-const COLOR_ACCENT = '#e31e24'; // Red
+// Colors defined inline where needed
 
 const BirthdayDisplay = () => {
   const { data, activeVideos, isLoaded } = useBirthdayData();
@@ -38,8 +35,8 @@ const BirthdayDisplay = () => {
     return hours >= startHour && hours < endHour;
   };
 
-  const isMonitorOn = isWithinHours(8, 20); // 08:00 - 20:00 (Полное отключение после 20:00)
-  const isBirthdayWindow = isWithinHours(8, 10); // B/D List только с 08:00 до 10:00
+  const isMonitorOn = isWithinHours(8, 20); // 08:00 - 20:00
+  const isBirthdayWindow = isWithinHours(8, 10); // Birthday List: 08:00 - 10:00
 
   // Scaling
   useEffect(() => {
@@ -56,10 +53,17 @@ const BirthdayDisplay = () => {
     const hasBirthdays = safeData.length > 0;
     const isBirthdayTime = isBirthdayWindow && hasBirthdays;
 
-    if (!isBirthdayTime && displayMode === 'birthday') {
+    // Switch TO birthday when it's birthday time and we're in video mode
+    if (isBirthdayTime && displayMode === 'video') {
+      setBirthdayStartTime(Date.now());
+      setDisplayMode('birthday');
+      setCurrentIndex(0);
+    }
+    // Switch AWAY from birthday when it's not birthday time
+    else if (!isBirthdayTime && displayMode === 'birthday') {
       setDisplayMode('video');
     }
-  }, [isLoaded, safeData.length, isBirthdayWindow, displayMode]);
+  }, [isLoaded, safeData.length, isBirthdayWindow]);
 
   // Video State - with caching to prevent excessive Storage requests
   const [activePlayer, setActivePlayer] = useState<'A' | 'B'>('A');
@@ -87,7 +91,6 @@ const BirthdayDisplay = () => {
       if (lastLoadedIndexA.current !== currentVideoIndex) {
         setPlayerAUrl(currentUrl);
         lastLoadedIndexA.current = currentVideoIndex;
-        console.log('Player A loaded:', currentUrl);
       }
       // Preload next video in player B only if not already loaded
       if (lastLoadedIndexB.current !== nextIndex && safeVideos.length > 1) {
@@ -100,7 +103,6 @@ const BirthdayDisplay = () => {
       if (lastLoadedIndexB.current !== currentVideoIndex) {
         setPlayerBUrl(currentUrl);
         lastLoadedIndexB.current = currentVideoIndex;
-        console.log('Player B loaded:', currentUrl);
       }
       // Preload next video in player A only if not already loaded
       if (lastLoadedIndexA.current !== nextIndex && safeVideos.length > 1) {
@@ -111,19 +113,30 @@ const BirthdayDisplay = () => {
     }
   }, [currentVideoIndex, activePlayer, safeVideos.length]); // Added safeVideos.length for initial load
 
-  // Playback Control - optimized dependencies
+  // Playback Control - manages video play/pause and reset
   useEffect(() => {
     if (!isMonitorOn) return;
     if (displayMode === 'video') {
       const activeRef = activePlayer === 'A' ? videoRefA : videoRefB;
-      activeRef.current?.play().catch(() => { });
+      // Reset to beginning before playing
+      if (activeRef.current) {
+        activeRef.current.currentTime = 0;
+        activeRef.current.play().catch(() => { });
+      }
     } else {
-      videoRefA.current?.pause();
-      videoRefB.current?.pause();
+      // Pause and reset videos when showing birthday list
+      if (videoRefA.current) {
+        videoRefA.current.pause();
+        videoRefA.current.currentTime = 0;
+      }
+      if (videoRefB.current) {
+        videoRefB.current.pause();
+        videoRefB.current.currentTime = 0;
+      }
       setPlayerAPlaying(false);
       setPlayerBPlaying(false);
     }
-  }, [displayMode, activePlayer, isMonitorOn]); // Removed URL deps to prevent reload loops
+  }, [displayMode, activePlayer, isMonitorOn]);
 
   const handleVideoEnd = () => {
     const nextIndex = (currentVideoIndex + 1) % (safeVideos.length || 1);
@@ -200,20 +213,15 @@ const BirthdayDisplay = () => {
         <video
           ref={id === 'A' ? videoRefA : videoRefB}
           src={url}
-          autoPlay
           muted
           playsInline
           preload="auto"
           className="w-full h-full object-fill"
           onPlay={() => {
-            console.log('Video playing:', id);
             if (id === 'A') setPlayerAPlaying(true); else setPlayerBPlaying(true);
           }}
           onEnded={() => isActive && handleVideoEnd()}
-          onError={(e) => {
-            console.error('Video error:', id, e);
-            isActive && handleVideoEnd();
-          }}
+          onError={() => isActive && handleVideoEnd()}
         />
       </div>
     );
