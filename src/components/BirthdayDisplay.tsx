@@ -118,8 +118,9 @@ const BirthdayDisplay = () => {
     if (!isMonitorOn) return;
     if (displayMode === 'video') {
       const activeRef = activePlayer === 'A' ? videoRefA : videoRefB;
-      // Reset to beginning before playing
-      if (activeRef.current) {
+      const activeUrl = activePlayer === 'A' ? playerAUrl : playerBUrl;
+      // Only play if we have a URL
+      if (activeRef.current && activeUrl) {
         activeRef.current.currentTime = 0;
         activeRef.current.play().catch(() => { });
       }
@@ -136,7 +137,7 @@ const BirthdayDisplay = () => {
       setPlayerAPlaying(false);
       setPlayerBPlaying(false);
     }
-  }, [displayMode, activePlayer, isMonitorOn]);
+  }, [displayMode, activePlayer, isMonitorOn, playerAUrl, playerBUrl]);
 
   const handleVideoEnd = () => {
     const nextIndex = (currentVideoIndex + 1) % (safeVideos.length || 1);
