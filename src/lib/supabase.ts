@@ -1,4 +1,5 @@
 
+// Deployment trigger: 2026-01-30 v2
 import { createClient } from '@supabase/supabase-js';
 
 // NEW Supabase account (migrated 2026-01-30)
