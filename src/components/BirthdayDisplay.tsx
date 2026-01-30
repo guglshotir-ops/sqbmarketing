@@ -61,7 +61,7 @@ const BirthdayDisplay = () => {
     }
   }, [isLoaded, safeData.length, isBirthdayWindow, displayMode]);
 
-  // Video State
+  // Video State - with caching to prevent excessive Storage requests
   const [activePlayer, setActivePlayer] = useState<'A' | 'B'>('A');
   const [playerAUrl, setPlayerAUrl] = useState('');
   const [playerBUrl, setPlayerBUrl] = useState('');
@@ -69,35 +69,49 @@ const BirthdayDisplay = () => {
   const [playerBPlaying, setPlayerBPlaying] = useState(false);
   const videoRefA = useRef<HTMLVideoElement>(null);
   const videoRefB = useRef<HTMLVideoElement>(null);
-  const playerAReady = useRef(false);
-  const playerBReady = useRef(false);
 
-  // Preloading
+  // Cache refs to prevent redundant URL updates
+  const lastLoadedIndexA = useRef<number>(-1);
+  const lastLoadedIndexB = useRef<number>(-1);
+
+  // Preloading - load videos when they become available
   useEffect(() => {
-    if (safeVideos.length > 0) {
-      const currentUrl = safeVideos[currentVideoIndex]?.url || '';
-      const nextIndex = (currentVideoIndex + 1) % safeVideos.length;
-      const nextUrl = safeVideos[nextIndex]?.url || '';
+    if (safeVideos.length === 0) return;
 
-      if (activePlayer === 'A') {
+    const currentUrl = safeVideos[currentVideoIndex]?.url || '';
+    const nextIndex = (currentVideoIndex + 1) % safeVideos.length;
+    const nextUrl = safeVideos[nextIndex]?.url || '';
+
+    if (activePlayer === 'A') {
+      // Only update if this is a new video index
+      if (lastLoadedIndexA.current !== currentVideoIndex) {
         setPlayerAUrl(currentUrl);
-        if (nextUrl !== playerBUrl) {
-          setPlayerBUrl(nextUrl);
-          playerBReady.current = false;
-          setPlayerBPlaying(false);
-        }
-      } else {
+        lastLoadedIndexA.current = currentVideoIndex;
+        console.log('Player A loaded:', currentUrl);
+      }
+      // Preload next video in player B only if not already loaded
+      if (lastLoadedIndexB.current !== nextIndex && safeVideos.length > 1) {
+        setPlayerBUrl(nextUrl);
+        lastLoadedIndexB.current = nextIndex;
+        setPlayerBPlaying(false);
+      }
+    } else {
+      // Only update if this is a new video index
+      if (lastLoadedIndexB.current !== currentVideoIndex) {
         setPlayerBUrl(currentUrl);
-        if (nextUrl !== playerAUrl) {
-          setPlayerAUrl(nextUrl);
-          playerAReady.current = false;
-          setPlayerAPlaying(false);
-        }
+        lastLoadedIndexB.current = currentVideoIndex;
+        console.log('Player B loaded:', currentUrl);
+      }
+      // Preload next video in player A only if not already loaded
+      if (lastLoadedIndexA.current !== nextIndex && safeVideos.length > 1) {
+        setPlayerAUrl(nextUrl);
+        lastLoadedIndexA.current = nextIndex;
+        setPlayerAPlaying(false);
       }
     }
-  }, [currentVideoIndex, safeVideos, activePlayer]);
+  }, [currentVideoIndex, activePlayer, safeVideos.length]); // Added safeVideos.length for initial load
 
-  // Playback Control
+  // Playback Control - optimized dependencies
   useEffect(() => {
     if (!isMonitorOn) return;
     if (displayMode === 'video') {
@@ -109,7 +123,7 @@ const BirthdayDisplay = () => {
       setPlayerAPlaying(false);
       setPlayerBPlaying(false);
     }
-  }, [displayMode, activePlayer, playerAUrl, playerBUrl, isMonitorOn]);
+  }, [displayMode, activePlayer, isMonitorOn]); // Removed URL deps to prevent reload loops
 
   const handleVideoEnd = () => {
     const nextIndex = (currentVideoIndex + 1) % (safeVideos.length || 1);
@@ -178,18 +192,29 @@ const BirthdayDisplay = () => {
     const isActive = activePlayer === id;
     const isPlaying = id === 'A' ? playerAPlaying : playerBPlaying;
 
+    // Show video when active and playing
+    const shouldShow = isActive && displayMode === 'video' && isPlaying;
+
     return (
-      <div key={`${id}-${url}`} className="absolute inset-0 transition-opacity duration-1000" style={{ opacity: isActive && displayMode === 'video' && isPlaying ? 1 : 0, zIndex: isActive ? 50 : 40 }}>
-        {url.includes('drive.google.com') ? (
-          <iframe src={url.includes('/preview') ? url : `${url.split('?')[0]}/preview`} className="w-full h-full border-none" allow="autoplay; fullscreen" onLoad={() => {
-            if (isActive && displayMode === 'video') {
-              if (id === 'A') setPlayerAPlaying(true); else setPlayerBPlaying(true);
-              setTimeout(handleVideoEnd, 30000);
-            }
-          }} />
-        ) : (
-          <video ref={id === 'A' ? videoRefA : videoRefB} src={url} muted playsInline preload="auto" className="w-full h-full object-fill" onPlay={() => id === 'A' ? setPlayerAPlaying(true) : setPlayerBPlaying(true)} onEnded={() => isActive && handleVideoEnd()} onError={() => isActive && handleVideoEnd()} />
-        )}
+      <div key={id} className="absolute inset-0 transition-opacity duration-1000" style={{ opacity: shouldShow ? 1 : 0, zIndex: isActive ? 50 : 40 }}>
+        <video
+          ref={id === 'A' ? videoRefA : videoRefB}
+          src={url}
+          autoPlay
+          muted
+          playsInline
+          preload="auto"
+          className="w-full h-full object-fill"
+          onPlay={() => {
+            console.log('Video playing:', id);
+            if (id === 'A') setPlayerAPlaying(true); else setPlayerBPlaying(true);
+          }}
+          onEnded={() => isActive && handleVideoEnd()}
+          onError={(e) => {
+            console.error('Video error:', id, e);
+            isActive && handleVideoEnd();
+          }}
+        />
       </div>
     );
   };

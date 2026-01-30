@@ -137,20 +137,17 @@ export const useBirthdayData = () => {
       setIsLoaded(true);
     }
 
-    // Fetch videos
-    try {
-      const { data: videos } = await supabase
-        .from('videos')
-        .select('*')
-        .eq('active', true)
-        .order('priority', { ascending: false });
+    // LOCAL VIDEOS - Bundled with the app, no external dependencies
+    // Stored in public/videos/ and deployed to GitHub Pages
+    const localVideos: VideoItem[] = [
+      { url: '/sqbmarketing/videos/video1.mp4', priority: 10 },
+      { url: '/sqbmarketing/videos/video2.mp4', priority: 10 },
+      { url: '/sqbmarketing/videos/video3.mp4', priority: 10 },
+    ];
 
-      if (videos) {
-        setActiveVideos(videos.map(v => ({ url: v.url, priority: v.priority || 10 })));
-      }
-    } catch (e) {
-      console.error(e);
-    }
+    // Use local videos - works offline, no CORS, no external APIs
+    setActiveVideos(localVideos);
+    console.log('Using local videos (3 files)');
   };
 
   useEffect(() => {

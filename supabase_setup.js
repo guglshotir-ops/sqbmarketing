@@ -7,17 +7,17 @@ const SUPABASE_SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
 async function setup() {
-    console.log('🚀 Attempting to create tables...');
+  console.log('🚀 Attempting to create tables...');
 
-    // Note: We normally can't run RAW SQL via the client unless an RPC is set up.
-    // We will try to do a simple query to see if connection works.
-    try {
-        const { data, error } = await supabase.from('employees').select('id').limit(1);
+  // Note: We normally can't run RAW SQL via the client unless an RPC is set up.
+  // We will try to do a simple query to see if connection works.
+  try {
+    const { data, error } = await supabase.from('employees').select('id').limit(1);
 
-        if (error && error.code === '42P01') {
-            console.log('❌ Table "employees" does not exist.');
-            console.log('Please go to your Supabase SQL Editor and PASTE the following SQL:');
-            console.log(`
+    if (error && error.code === '42P01') {
+      console.log('❌ Table "employees" does not exist.');
+      console.log('Please go to your Supabase SQL Editor and PASTE the following SQL:');
+      console.log(`
         CREATE TABLE employees (
           id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
           name TEXT NOT NULL,
@@ -41,12 +41,12 @@ async function setup() {
         ALTER PUBLICATION supabase_realtime ADD TABLE employees;
         ALTER PUBLICATION supabase_realtime ADD TABLE videos;
       `);
-        } else {
-            console.log('✅ Tables already exist or connection successful.');
-        }
-    } catch (err) {
-        console.error('Error connecting to Supabase:', err);
+    } else {
+      console.log('✅ Tables already exist or connection successful.');
     }
+  } catch (err) {
+    console.error('Error connecting to Supabase:', err);
+  }
 }
 
 setup();
