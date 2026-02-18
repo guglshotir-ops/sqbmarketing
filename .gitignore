@@ -1,0 +1,60 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+public/videos/
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ===== SENSITIVE FILES - DO NOT COMMIT =====
+
+# Utility scripts with Supabase service_role keys
+cleanup_videos.js
+check_today.cjs
+check_tomorrow.cjs
+check_jan15.cjs
+check_jan15.js
+import_employees.js
+supabase_setup.js
+sync_supabase.cjs
+migrate_to_new_supabase.cjs
+backup_employees.cjs
+reimport_employees.cjs
+analyze_data.js
+checkpoint.cjs
+
+# Employee data
+employees.csv
+database/
+backup/
+backup_*/
+
+# Old code versions
+old_version.tsx
+old_version.txt
+old_version_fixed.tsx
+
+# N8N workflow (may contain secrets)
+n8n_workflow.json
+
+# Environment files
+.env
+.env.*
