@@ -78,13 +78,45 @@ const BirthdayDisplay = () => {
   const lastLoadedIndexA = useRef<number>(-1);
   const lastLoadedIndexB = useRef<number>(-1);
 
+  // === VIDEO BLOB CACHE ===
+  // Download videos once into memory, then play from blob URLs
+  // This reduces daily traffic from ~50GB to ~100MB
+  const cachedUrls = useRef<Map<string, string>>(new Map());
+  const [videosReady, setVideosReady] = useState(false);
+
+  useEffect(() => {
+    if (safeVideos.length === 0 || cachedUrls.current.size > 0) return;
+
+    const cacheAll = async () => {
+      console.log('[VideoCache] Downloading videos to memory...');
+      for (const video of safeVideos) {
+        try {
+          const res = await fetch(video.url);
+          const blob = await res.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          cachedUrls.current.set(video.url, blobUrl);
+          console.log(`[VideoCache] ✅ ${video.url} (${(blob.size / 1024 / 1024).toFixed(1)} MB)`);
+        } catch (e) {
+          cachedUrls.current.set(video.url, video.url);
+          console.error('[VideoCache] ❌ Failed:', video.url);
+        }
+      }
+      setVideosReady(true);
+      console.log('[VideoCache] All videos cached in memory! No more downloads needed.');
+    };
+    cacheAll();
+  }, [safeVideos.length]);
+
+  const resolveUrl = (url: string) => cachedUrls.current.get(url) || url;
+  // === END VIDEO BLOB CACHE ===
+
   // Preloading - load videos when they become available
   useEffect(() => {
     if (safeVideos.length === 0) return;
 
-    const currentUrl = safeVideos[currentVideoIndex]?.url || '';
+    const currentUrl = resolveUrl(safeVideos[currentVideoIndex]?.url || '');
     const nextIndex = (currentVideoIndex + 1) % safeVideos.length;
-    const nextUrl = safeVideos[nextIndex]?.url || '';
+    const nextUrl = resolveUrl(safeVideos[nextIndex]?.url || '');
 
     if (activePlayer === 'A') {
       // Only update if this is a new video index
@@ -111,7 +143,7 @@ const BirthdayDisplay = () => {
         setPlayerAPlaying(false);
       }
     }
-  }, [currentVideoIndex, activePlayer, safeVideos.length]); // Added safeVideos.length for initial load
+  }, [currentVideoIndex, activePlayer, safeVideos.length, videosReady]); // videosReady triggers re-run with blob URLs
 
   // Playback Control - manages video play/pause and reset
   useEffect(() => {
